@@ -101,6 +101,10 @@ let audioCtx = null;
 let audioUnlocked = false;
 let alertBuffer = null;
 let alertBufferLoading = null;
+let alertEl = null;
+let htmlAudioUnlocked = false;
+let keepAliveSrc = null;
+let audioKeepAliveTimer = null;
 let toastTimer = null;
 let previewTimer = null;
 let wakeLock = null;
@@ -749,6 +753,15 @@ function ensureAudio() {
   return audioCtx;
 }
 
+function ensureAlertEl() {
+  if (alertEl) return alertEl;
+  alertEl = new Audio('sounds/alert.mp3');
+  alertEl.preload = 'auto';
+  alertEl.playsInline = true;
+  alertEl.setAttribute('playsinline', 'true');
+  return alertEl;
+}
+
 function decodeAlertData(ctx, data) {
   return new Promise((resolve, reject) => {
     const ret = ctx.decodeAudioData(data, resolve, reject);
@@ -779,36 +792,137 @@ function loadAlertBuffer() {
   return alertBufferLoading;
 }
 
+function stopAudioKeepAlive() {
+  if (keepAliveSrc) {
+    try { keepAliveSrc.stop(); } catch { /* ignore */ }
+    try { keepAliveSrc.disconnect(); } catch { /* ignore */ }
+    keepAliveSrc = null;
+  }
+  if (audioKeepAliveTimer) {
+    clearInterval(audioKeepAliveTimer);
+    audioKeepAliveTimer = null;
+  }
+}
+
+function startAudioKeepAlive() {
+  if (!alertSettings.enabled || !audioUnlocked) {
+    stopAudioKeepAlive();
+    return;
+  }
+  if (document.visibilityState !== 'visible') return;
+  const ctx = audioCtx;
+  if (ctx && ctx.state !== 'running') {
+    if (keepAliveSrc) {
+      try { keepAliveSrc.stop(); } catch { /* ignore */ }
+      keepAliveSrc = null;
+    }
+    ctx.resume().then(() => startAudioKeepAlive()).catch(() => {});
+    if (!audioKeepAliveTimer) {
+      audioKeepAliveTimer = setInterval(startAudioKeepAlive, 5000);
+    }
+    return;
+  }
+  if (ctx && ctx.state === 'running' && !keepAliveSrc) {
+    try {
+      const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.5)), ctx.sampleRate);
+      const src = ctx.createBufferSource();
+      const gain = ctx.createGain();
+      src.buffer = buf;
+      src.loop = true;
+      gain.gain.value = 0.00001;
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.onended = () => { if (keepAliveSrc === src) keepAliveSrc = null; };
+      src.start();
+      keepAliveSrc = src;
+    } catch { /* ignore */ }
+  }
+  if (!audioKeepAliveTimer) {
+    audioKeepAliveTimer = setInterval(startAudioKeepAlive, 5000);
+  }
+}
+
+async function unlockHtmlAudio() {
+  const el = ensureAlertEl();
+  if (!el || htmlAudioUnlocked) return htmlAudioUnlocked;
+  try {
+    const prev = el.volume;
+    el.muted = false;
+    el.volume = 0;
+    await el.play();
+    el.pause();
+    el.currentTime = 0;
+    el.volume = prev || Math.max(0.0001, alertSettings.volume);
+    htmlAudioUnlocked = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function unlockAudio({ preview = false } = {}) {
   const ctx = ensureAudio();
-  if (!ctx) return false;
   try {
-    if (ctx.state === 'suspended') await ctx.resume();
-    audioUnlocked = ctx.state === 'running';
+    if (ctx && ctx.state !== 'running') await ctx.resume();
+    if (ctx) audioUnlocked = ctx.state === 'running';
   } catch {
-    audioUnlocked = false;
+    /* keep existing flag */
   }
+  if (await unlockHtmlAudio()) audioUnlocked = true;
   if (audioUnlocked) await loadAlertBuffer();
+  if (audioUnlocked) startAudioKeepAlive();
+  else stopAudioKeepAlive();
   syncAlertUi();
   if (audioUnlocked && preview) playAlert();
   return audioUnlocked;
 }
 
+async function playAlertHtml(vol) {
+  const el = ensureAlertEl();
+  if (!el) return false;
+  try {
+    el.pause();
+    el.currentTime = 0;
+    el.muted = false;
+    el.volume = vol;
+    await el.play();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function playAlert() {
   if (!alertSettings.enabled || !audioUnlocked) return;
+  playAlertNow();
+}
+
+async function playAlertNow() {
   const ctx = ensureAudio();
-  if (!ctx || ctx.state !== 'running') return;
-  if (!alertBuffer) {
-    loadAlertBuffer().then((buf) => { if (buf) playAlert(); });
-    return;
+  const vol = Math.max(0.0001, alertSettings.volume);
+
+  if (ctx && ctx.state !== 'running') {
+    try { await ctx.resume(); } catch { /* ignore */ }
   }
-  const src = ctx.createBufferSource();
-  const gain = ctx.createGain();
-  src.buffer = alertBuffer;
-  gain.gain.value = Math.max(0.0001, alertSettings.volume);
-  src.connect(gain);
-  gain.connect(ctx.destination);
-  src.start();
+
+  if (ctx && ctx.state === 'running') {
+    if (!alertBuffer) await loadAlertBuffer();
+    if (alertBuffer) {
+      try {
+        const src = ctx.createBufferSource();
+        const gain = ctx.createGain();
+        src.buffer = alertBuffer;
+        gain.gain.value = vol;
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        src.start();
+        startAudioKeepAlive();
+        return;
+      } catch { /* fall through to HTML audio */ }
+    }
+  }
+
+  await playAlertHtml(vol);
 }
 
 function syncAlertUi() {
@@ -1019,8 +1133,13 @@ document.addEventListener('visibilitychange', () => {
     applyWakeLock();
   } else {
     stopPolling();
+    stopAudioKeepAlive();
   }
 });
+
+document.addEventListener('pointerdown', () => {
+  if (alertSettings.enabled) unlockAudio();
+}, { passive: true });
 
 alertToggle.addEventListener('click', async () => {
   alertSettings.enabled = !alertSettings.enabled;
@@ -1028,6 +1147,8 @@ alertToggle.addEventListener('click', async () => {
   if (alertSettings.enabled) {
     await unlockAudio({ preview: true });
     refreshMarketExtras();
+  } else {
+    stopAudioKeepAlive();
   }
   syncAlertUi();
 });
@@ -1173,7 +1294,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=21').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=22').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));
