@@ -8,6 +8,9 @@ const SPIKE_P = 0.97;
 const COOLDOWN_MS = 180000;
 const STORAGE_KEY = 'btc-xaut-quote-v1';
 const ALERT_KEY = 'btc-xaut-alerts-v1';
+const WAKE_KEY = 'btc-xaut-wakelock-v1';
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const WEEK_TTL = 60000;
 const TZ = 'Asia/Hong_Kong';
 
 const statusEl = document.getElementById('status');
@@ -20,6 +23,13 @@ const alertVolumeWrap = document.getElementById('alertVolumeWrap');
 const alertVolume = document.getElementById('alertVolume');
 const alertBar = document.getElementById('alertBar');
 const alertToast = document.getElementById('alertToast');
+const wakeToggle = document.getElementById('wakeToggle');
+const wakeHint = document.getElementById('wakeHint');
+
+const WAKE_HINT = '開咗就盡量唔讓電話自動熄屏，方便放係度睇。';
+const WAKE_UNAVAILABLE = '呢部裝置暫時唔支援螢幕常亮。';
+const WAKE_FAILED = '而家未能保持常亮，可能係系統限制。請保持 app 開住再試。';
+const wakeSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
 
 const DEFAULT_HINT = '1 或 5 分鐘成交額遠高過近 3 小時水平就會出聲。要 app 開住先會响；電話靜音可能唔會响。';
 const UNLOCK_HINT = '撳呢度開啟提示聲。之後要 app 開住先會响。';
@@ -35,6 +45,22 @@ let audioCtx = null;
 let audioUnlocked = false;
 let toastTimer = null;
 let previewTimer = null;
+let wakeLock = null;
+const weekCache = {};
+
+function loadWakeEnabled() {
+  try {
+    return JSON.parse(localStorage.getItem(WAKE_KEY) || 'null')?.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
+let wakeEnabled = loadWakeEnabled();
+
+function saveWakeEnabled() {
+  localStorage.setItem(WAKE_KEY, JSON.stringify({ enabled: wakeEnabled }));
+}
 
 function loadAlertSettings() {
   try {
@@ -161,7 +187,7 @@ async function refresh({ manual = false } = {}) {
     const updatedAt = Date.now();
     saveCache({ tickers, updatedAt });
     applyTickers(tickers, { updatedAt });
-    if (manual) checkVolumeSpikes();
+    if (manual) refreshMarketExtras();
   } catch (err) {
     const cache = loadCache();
     if (cache?.tickers) {
@@ -182,9 +208,9 @@ function startPolling() {
     if (document.visibilityState === 'visible') refresh();
   }, POLL_MS);
   klineTimer = setInterval(() => {
-    if (document.visibilityState === 'visible' && alertSettings.enabled) checkVolumeSpikes();
+    if (document.visibilityState === 'visible') refreshMarketExtras();
   }, KLINE_MS);
-  if (alertSettings.enabled) checkVolumeSpikes();
+  refreshMarketExtras();
 }
 
 function stopPolling() {
@@ -215,6 +241,7 @@ async function fetchKlines(symbol) {
   const rows = await res.json();
   return rows.map((row) => ({
     openTime: row[0],
+    close: Number(row[4]),
     quoteVolume: Number(row[7]),
   }));
 }
@@ -252,15 +279,76 @@ function detectSpike(candles) {
   return null;
 }
 
-async function checkVolumeSpikes() {
-  if (!alertSettings.enabled || document.visibilityState !== 'visible') return;
+function changePct(now, then) {
+  if (!(then > 0) || now == null || Number.isNaN(now)) return null;
+  return ((now - then) / then) * 100;
+}
+
+function applyPeriod(symbol, key, pct) {
+  const el = document.getElementById('card-' + symbol)?.querySelector('[data-chg-' + key + ']');
+  if (!el) return;
+  const b = el.querySelector('b');
+  if (pct == null || Number.isNaN(pct)) {
+    b.textContent = '—';
+    el.classList.remove('up', 'down');
+    return;
+  }
+  b.textContent = signed(pct) + '%';
+  el.classList.toggle('up', pct > 0);
+  el.classList.toggle('down', pct < 0);
+}
+
+function closeAtOrBefore(candles, target) {
+  let hit = null;
+  for (const c of candles) {
+    if (c.openTime <= target) hit = c;
+    else break;
+  }
+  return hit;
+}
+
+function applyHourChange(symbol, candles) {
+  if (!candles || candles.length < 61) return;
+  const last = candles[candles.length - 1];
+  const ago = closeAtOrBefore(candles, last.openTime - 60 * 60 * 1000) || candles[candles.length - 61];
+  applyPeriod(symbol, '1h', changePct(last.close, ago.close));
+}
+
+async function fetchWeekChange(symbol) {
+  const cached = weekCache[symbol];
+  if (cached && Date.now() - cached.at < WEEK_TTL) return cached.pct;
+  const url = 'https://api.binance.com/api/v3/klines?symbol=' + symbol + '&interval=1h&limit=169';
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  const last = Number(rows[rows.length - 1][4]);
+  const target = Date.now() - WEEK_MS;
+  let ago = rows[0];
+  for (const row of rows) {
+    if (row[0] <= target) ago = row;
+    else break;
+  }
+  const pct = changePct(last, Number(ago[4]));
+  weekCache[symbol] = { pct, at: Date.now() };
+  return pct;
+}
+
+async function refreshWeekChanges() {
+  const pcts = await Promise.all(SYMBOLS.map(fetchWeekChange));
+  SYMBOLS.forEach((symbol, i) => applyPeriod(symbol, '7d', pcts[i]));
+}
+
+async function refreshMarketExtras() {
+  if (document.visibilityState !== 'visible') return;
   if (klineInFlight) return;
   klineInFlight = true;
   try {
     const sets = await Promise.all(SYMBOLS.map(fetchKlines));
     for (let i = 0; i < SYMBOLS.length; i++) {
-      maybeAlert(SYMBOLS[i], detectSpike(sets[i]));
+      applyHourChange(SYMBOLS[i], sets[i]);
+      if (alertSettings.enabled) maybeAlert(SYMBOLS[i], detectSpike(sets[i]));
     }
+    await refreshWeekChanges();
   } catch (err) {
     console.warn(err);
   } finally {
@@ -359,6 +447,7 @@ document.addEventListener('visibilitychange', () => {
     refresh();
     startPolling();
     if (alertSettings.enabled && audioUnlocked) unlockAudio();
+    applyWakeLock();
   } else {
     stopPolling();
   }
@@ -369,7 +458,7 @@ alertToggle.addEventListener('click', async () => {
   saveAlertSettings();
   if (alertSettings.enabled) {
     await unlockAudio({ preview: true });
-    checkVolumeSpikes();
+    refreshMarketExtras();
   }
   syncAlertUi();
 });
@@ -384,6 +473,59 @@ alertVolume.addEventListener('input', () => {
   saveAlertSettings();
   clearTimeout(previewTimer);
   previewTimer = setTimeout(() => unlockAudio({ preview: true }), 180);
+});
+
+
+async function applyWakeLock() {
+  if (!wakeSupported) {
+    if (wakeLock) {
+      try { await wakeLock.release(); } catch { /* ignore */ }
+      wakeLock = null;
+    }
+    return false;
+  }
+  if (!wakeEnabled || document.visibilityState !== 'visible') {
+    if (wakeLock) {
+      try { await wakeLock.release(); } catch { /* ignore */ }
+      wakeLock = null;
+    }
+    return false;
+  }
+  try {
+    if (wakeLock && wakeLock.released === false) return true;
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { syncWakeUi(); });
+    syncWakeUi();
+    return true;
+  } catch (err) {
+    console.warn(err);
+    wakeLock = null;
+    return false;
+  }
+}
+
+function syncWakeUi(failed) {
+  const on = !!(wakeSupported && wakeEnabled && wakeLock && wakeLock.released === false);
+  wakeToggle.disabled = !wakeSupported;
+  wakeToggle.setAttribute('aria-checked', wakeSupported && wakeEnabled ? 'true' : 'false');
+  wakeHint.classList.toggle('need-unlock', !!(failed && wakeEnabled));
+  if (!wakeSupported) {
+    wakeHint.textContent = WAKE_UNAVAILABLE;
+  } else if (failed && wakeEnabled) {
+    wakeHint.textContent = WAKE_FAILED;
+  } else if (wakeEnabled && document.visibilityState === 'visible' && !on && !failed) {
+    wakeHint.textContent = WAKE_HINT;
+  } else {
+    wakeHint.textContent = WAKE_HINT;
+  }
+}
+
+wakeToggle.addEventListener('click', async () => {
+  if (!wakeSupported) return;
+  wakeEnabled = !wakeEnabled;
+  saveWakeEnabled();
+  const ok = await applyWakeLock();
+  syncWakeUi(wakeEnabled && !ok);
 });
 
 // Pull to refresh
@@ -431,6 +573,8 @@ if ('serviceWorker' in navigator) {
 }
 
 syncAlertUi();
+syncWakeUi();
+applyWakeLock();
 const cache = loadCache();
 if (cache?.tickers) applyTickers(cache.tickers, { fromCache: !navigator.onLine, updatedAt: cache.updatedAt });
 refresh();

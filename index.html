@@ -46,6 +46,10 @@
           <span data-change-amt>—</span>
           <span class="pill" data-change-pct>—</span>
         </div>
+        <div class="periods">
+          <span class="period" data-chg-1h><em>1h</em> <b>—</b></span>
+          <span class="period" data-chg-7d><em>7d</em> <b>—</b></span>
+        </div>
         <div class="range" hidden>
           <div class="range-labels">
             <span>24h 低 <b data-low>—</b></span>
@@ -69,6 +73,10 @@
           <span data-change-amt>—</span>
           <span class="pill" data-change-pct>—</span>
         </div>
+        <div class="periods">
+          <span class="period" data-chg-1h><em>1h</em> <b>—</b></span>
+          <span class="period" data-chg-7d><em>7d</em> <b>—</b></span>
+        </div>
         <div class="range" hidden>
           <div class="range-labels">
             <span>24h 低 <b data-low>—</b></span>
@@ -91,6 +99,16 @@
       <div class="alert-volume" id="alertVolumeWrap" hidden>
         <label for="alertVolume">音量</label>
         <input id="alertVolume" type="range" min="0" max="100" value="70" step="1">
+      </div>
+    </section>
+
+    <section class="alert-bar" id="wakeBar">
+      <div class="alert-row">
+        <div>
+          <h3>保持螢幕常亮</h3>
+          <p class="alert-hint" id="wakeHint">開咗就盡量唔讓電話自動熄屏，方便放係度睇。</p>
+        </div>
+        <button class="switch" id="wakeToggle" type="button" role="switch" aria-checked="false" aria-label="保持螢幕常亮"></button>
       </div>
     </section>
 
