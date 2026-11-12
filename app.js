@@ -585,7 +585,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=9').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=10').catch(() => {});
 }
 
 syncAlertUi();

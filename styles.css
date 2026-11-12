@@ -134,9 +134,9 @@ h2 { font-size: 16px; font-weight: 600; }
 .price {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
-  font-size: clamp(38px, 11.2vw, 52px);
+  font-size: clamp(42px, 12.8vw, 56px);
   font-weight: 640;
-  letter-spacing: -.04em;
+  letter-spacing: -.05em;
   white-space: nowrap;
   line-height: 1.05;
   min-width: 0;
