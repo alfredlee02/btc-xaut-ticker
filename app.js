@@ -765,22 +765,37 @@ function playAlert(symbol) {
   if (!alertSettings.enabled || !audioUnlocked) return;
   const ctx = ensureAudio();
   if (!ctx || ctx.state !== 'running') return;
-  const vol = Math.max(0.0001, alertSettings.volume * 0.22);
-  const notes = symbol === 'XAUTUSDT' ? [698.5, 932] : [880, 1174.7];
+  const vol = Math.max(0.0001, alertSettings.volume);
+  const notes = symbol === 'XAUTUSDT' ? [698.46, 932.33] : [880, 1174.66];
   const now = ctx.currentTime;
+  const master = ctx.createGain();
+  master.gain.value = vol;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -12;
+  comp.knee.value = 2;
+  comp.ratio.value = 8;
+  comp.attack.value = 0.002;
+  comp.release.value = 0.12;
+  master.connect(comp);
+  comp.connect(ctx.destination);
   notes.forEach((freq, i) => {
     const osc = ctx.createOscillator();
+    const filter = ctx.createBiquadFilter();
     const gain = ctx.createGain();
-    osc.type = 'sine';
+    osc.type = 'square';
     osc.frequency.value = freq;
-    const t0 = now + i * 0.16;
+    filter.type = 'lowpass';
+    filter.frequency.value = 2800;
+    filter.Q.value = 0.7;
+    const t0 = now + i * 0.14;
     gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(vol, t0 + 0.02);
-    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.28);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.gain.linearRampToValueAtTime(0.7, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.42);
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(master);
     osc.start(t0);
-    osc.stop(t0 + 0.3);
+    osc.stop(t0 + 0.45);
   });
 }
 
@@ -1146,7 +1161,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=19').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=20').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));
