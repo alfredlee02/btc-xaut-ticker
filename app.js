@@ -187,7 +187,7 @@ async function refresh({ manual = false } = {}) {
     const updatedAt = Date.now();
     saveCache({ tickers, updatedAt });
     applyTickers(tickers, { updatedAt });
-    if (manual) refreshMarketExtras();
+    refreshMarketExtras();
   } catch (err) {
     const cache = loadCache();
     if (cache?.tickers) {
@@ -334,19 +334,25 @@ async function fetchWeekChange(symbol) {
 }
 
 async function refreshWeekChanges() {
-  const pcts = await Promise.all(SYMBOLS.map(fetchWeekChange));
-  SYMBOLS.forEach((symbol, i) => applyPeriod(symbol, '7d', pcts[i]));
+  const results = await Promise.allSettled(SYMBOLS.map(fetchWeekChange));
+  SYMBOLS.forEach((symbol, i) => {
+    if (results[i].status === 'fulfilled') applyPeriod(symbol, '7d', results[i].value);
+  });
 }
 
 async function refreshMarketExtras() {
-  if (document.visibilityState !== 'visible') return;
+  if (document.visibilityState === 'hidden') return;
   if (klineInFlight) return;
   klineInFlight = true;
   try {
-    const sets = await Promise.all(SYMBOLS.map(fetchKlines));
+    const results = await Promise.allSettled(SYMBOLS.map(fetchKlines));
     for (let i = 0; i < SYMBOLS.length; i++) {
-      applyHourChange(SYMBOLS[i], sets[i]);
-      if (alertSettings.enabled) maybeAlert(SYMBOLS[i], detectSpike(sets[i]));
+      if (results[i].status !== 'fulfilled') {
+        console.warn(results[i].reason);
+        continue;
+      }
+      applyHourChange(SYMBOLS[i], results[i].value);
+      if (alertSettings.enabled) maybeAlert(SYMBOLS[i], detectSpike(results[i].value));
     }
     await refreshWeekChanges();
   } catch (err) {
@@ -505,23 +511,27 @@ async function applyWakeLock() {
 }
 
 function syncWakeUi(failed) {
-  const on = !!(wakeSupported && wakeEnabled && wakeLock && wakeLock.released === false);
-  wakeToggle.disabled = !wakeSupported;
-  wakeToggle.setAttribute('aria-checked', wakeSupported && wakeEnabled ? 'true' : 'false');
-  wakeHint.classList.toggle('need-unlock', !!(failed && wakeEnabled));
+  const checked = !!(wakeSupported && wakeEnabled);
+  wakeToggle.disabled = false;
+  wakeToggle.setAttribute('aria-checked', checked ? 'true' : 'false');
+  const showWarn = !wakeSupported || !!(failed && wakeEnabled);
+  wakeHint.classList.toggle('need-unlock', showWarn);
   if (!wakeSupported) {
     wakeHint.textContent = WAKE_UNAVAILABLE;
   } else if (failed && wakeEnabled) {
     wakeHint.textContent = WAKE_FAILED;
-  } else if (wakeEnabled && document.visibilityState === 'visible' && !on && !failed) {
-    wakeHint.textContent = WAKE_HINT;
   } else {
     wakeHint.textContent = WAKE_HINT;
   }
 }
 
 wakeToggle.addEventListener('click', async () => {
-  if (!wakeSupported) return;
+  if (!wakeSupported) {
+    wakeEnabled = false;
+    saveWakeEnabled();
+    syncWakeUi();
+    return;
+  }
   wakeEnabled = !wakeEnabled;
   saveWakeEnabled();
   const ok = await applyWakeLock();
@@ -569,7 +579,13 @@ document.getElementById('dismissInstall').addEventListener('click', () => {
 });
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./sw.js').catch(() => {});
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloaded) return;
+    reloaded = true;
+    location.reload();
+  });
+  navigator.serviceWorker.register('./sw.js?v=6').catch(() => {});
 }
 
 syncAlertUi();
