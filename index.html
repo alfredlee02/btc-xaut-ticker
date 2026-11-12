@@ -14,15 +14,17 @@
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>BTC · XAUT 行情</title>
-  <link rel="stylesheet" href="styles.css?v=10">
+  <link rel="stylesheet" href="styles.css?v=11">
 </head>
 <body>
   <div class="refresh-hint" id="refreshHint" hidden>釋放以更新</div>
   <div class="toast" id="alertToast" hidden role="status" aria-live="assertive"></div>
   <div class="app">
     <header class="top">
-      <h1 class="sr-only">實時行情</h1>
-      <p class="status" id="status" aria-live="polite">載入中…</p>
+      <div>
+        <h1>豬髀實時報價</h1>
+        <p class="status" id="status" aria-live="polite">載入中…</p>
+      </div>
       <button class="icon-btn" id="refreshBtn" type="button" aria-label="重新整理">
         <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
           <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7c2.76 0 5 2.24 5 5a5 5 0 0 1-8.16 3.87l-1.46 1.46A7 7 0 0 0 19 12c0-1.93-.78-3.68-2.35-5.65zM6 12a5 5 0 0 1 8.16-3.87l1.46-1.46A7 7 0 0 0 5 12c0 1.93.78 3.68 2.35 5.65A7.95 7.95 0 0 0 12 20v3l5-5-5-5v3a5 5 0 0 1-5-5z"/>
@@ -121,6 +123,6 @@
       <button type="button" id="dismissInstall">知道</button>
     </div>
   </div>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>
