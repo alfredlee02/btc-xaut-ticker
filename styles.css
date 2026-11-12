@@ -273,11 +273,16 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
 
 .periods {
   display: flex;
-  gap: 16px;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 8px;
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
+  font-size: 12px;
   color: var(--muted);
+}
+
+.period {
+  white-space: nowrap;
 }
 
 .period em {

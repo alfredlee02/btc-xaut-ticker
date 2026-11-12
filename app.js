@@ -5,7 +5,7 @@ const UNIVERSE_MS = 12 * 60 * 1000;
 const TICKER_URL = 'https://api.binance.com/api/v3/ticker/24hr';
 const POLL_MS = 5000;
 const KLINE_MS = 15000;
-const KLINE_LIMIT = 180;
+const KLINE_LIMIT = 250;
 const SPIKE_P = 0.97;
 const COOLDOWN_MS = 180000;
 const STORAGE_KEY = 'btc-xaut-quote-v1';
@@ -198,7 +198,7 @@ function resetCardVisuals(card) {
   changeBox.className = 'change';
   card.querySelector('[data-change-amt]').textContent = '—';
   card.querySelector('[data-change-pct]').textContent = '—';
-  for (const key of ['1h', '7d']) {
+  for (const key of ['1h', '4h', '7d']) {
     const el = card.querySelector('[data-chg-' + key + ']');
     if (!el) continue;
     el.querySelector('b').textContent = '—';
@@ -548,11 +548,19 @@ function closeAtOrBefore(candles, target) {
   return hit;
 }
 
-function applyHourChange(symbol, candles) {
-  if (!candles || candles.length < 61) return;
+function applyTrailingChange(symbol, key, candles, msAgo, minCandles) {
+  if (!candles || candles.length < minCandles) {
+    applyPeriod(symbol, key, null);
+    return;
+  }
   const last = candles[candles.length - 1];
-  const ago = closeAtOrBefore(candles, last.openTime - 60 * 60 * 1000) || candles[candles.length - 61];
-  applyPeriod(symbol, '1h', changePct(last.close, ago.close));
+  const ago = closeAtOrBefore(candles, last.openTime - msAgo) || candles[candles.length - minCandles];
+  applyPeriod(symbol, key, changePct(last.close, ago.close));
+}
+
+function applyHourChanges(symbol, candles) {
+  applyTrailingChange(symbol, '1h', candles, 60 * 60 * 1000, 61);
+  applyTrailingChange(symbol, '4h', candles, 4 * 60 * 60 * 1000, 241);
 }
 
 async function fetchWeekChange(symbol) {
@@ -691,8 +699,8 @@ async function refreshMarketExtras() {
         continue;
       }
       if (!SYMBOLS.includes(symbols[i])) continue;
-      applyHourChange(symbols[i], results[i].value);
-      if (alertSettings.enabled) maybeAlert(symbols[i], detectSpike(results[i].value));
+      applyHourChanges(symbols[i], results[i].value);
+      if (alertSettings.enabled) maybeAlert(symbols[i], detectSpike(results[i].value.slice(-180)));
     }
     await Promise.allSettled([sparkP, weekP]);
   } catch (err) {
@@ -1138,7 +1146,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=14').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=15').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));
