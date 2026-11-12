@@ -11,6 +11,7 @@ const ALERT_KEY = 'btc-xaut-alerts-v1';
 const WAKE_KEY = 'btc-xaut-wakelock-v1';
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const WEEK_TTL = 60000;
+const SPARK_TTL = 60000;
 const TZ = 'Asia/Hong_Kong';
 
 const statusEl = document.getElementById('status');
@@ -47,6 +48,7 @@ let toastTimer = null;
 let previewTimer = null;
 let wakeLock = null;
 const weekCache = {};
+const sparkCache = {};
 
 function loadWakeEnabled() {
   try {
@@ -344,12 +346,107 @@ async function refreshWeekChanges() {
   });
 }
 
+const SPARK_W = 240;
+const SPARK_H = 100;
+const SPARK_PAD_Y = 10;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+async function fetchSparkline(symbol) {
+  const cached = sparkCache[symbol];
+  if (cached && Date.now() - cached.at < SPARK_TTL) return cached.closes;
+  const url = 'https://api.binance.com/api/v3/klines?symbol=' + symbol + '&interval=15m&limit=97';
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  const closes = rows.map((row) => Number(row[4])).filter((n) => Number.isFinite(n));
+  sparkCache[symbol] = { closes, at: Date.now() };
+  return closes;
+}
+
+function sparkCoords(closes) {
+  if (!closes || closes.length < 2) return null;
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const span = max - min;
+  const last = closes.length - 1;
+  return closes.map((c, i) => {
+    const x = (i / last) * SPARK_W;
+    const y = span === 0
+      ? SPARK_H / 2
+      : SPARK_PAD_Y + (1 - (c - min) / span) * (SPARK_H - SPARK_PAD_Y * 2);
+    return [x, y];
+  });
+}
+
+function fmtPt(p) {
+  return p[0].toFixed(2) + ' ' + p[1].toFixed(2);
+}
+
+function smoothLine(points) {
+  if (points.length < 2) return '';
+  let d = 'M' + fmtPt(points[0]);
+  if (points.length === 2) return d + ' L' + fmtPt(points[1]);
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6;
+    const c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6;
+    const c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ' C' + fmtPt([c1x, c1y]) + ' ' + fmtPt([c2x, c2y]) + ' ' + fmtPt(p2);
+  }
+  return d;
+}
+
+function applySparkline(symbol, closes) {
+  const svg = document.getElementById('card-' + symbol)?.querySelector('[data-spark]');
+  if (!svg) return;
+  svg.replaceChildren();
+  const points = sparkCoords(closes);
+  if (!points) {
+    svg.setAttribute('class', 'spark');
+    return;
+  }
+  const first = closes[0];
+  const last = closes[closes.length - 1];
+  const dir = last > first ? 'up' : last < first ? 'down' : '';
+  svg.setAttribute('class', 'spark' + (dir ? ' ' + dir : ''));
+  svg.setAttribute('viewBox', '0 0 ' + SPARK_W + ' ' + SPARK_H);
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  const lineD = smoothLine(points);
+  const end = points[points.length - 1];
+  const fillD = lineD + ' L' + end[0].toFixed(2) + ' ' + SPARK_H + ' L0 ' + SPARK_H + ' Z';
+
+  const fill = document.createElementNS(SVG_NS, 'path');
+  fill.setAttribute('class', 'spark-fill');
+  fill.setAttribute('d', fillD);
+  const line = document.createElementNS(SVG_NS, 'path');
+  line.setAttribute('class', 'spark-line');
+  line.setAttribute('d', lineD);
+  svg.append(fill, line);
+}
+
+async function refreshSparklines() {
+  const results = await Promise.allSettled(SYMBOLS.map(fetchSparkline));
+  SYMBOLS.forEach((symbol, i) => {
+    if (results[i].status === 'fulfilled') applySparkline(symbol, results[i].value);
+    else console.warn(results[i].reason);
+  });
+}
+
 async function refreshMarketExtras() {
   if (document.visibilityState === 'hidden') return;
   if (klineInFlight) return;
   klineInFlight = true;
   try {
-    const results = await Promise.allSettled(SYMBOLS.map(fetchKlines));
+    const klineP = Promise.allSettled(SYMBOLS.map(fetchKlines));
+    const sparkP = refreshSparklines();
+    const weekP = refreshWeekChanges();
+
+    const results = await klineP;
     for (let i = 0; i < SYMBOLS.length; i++) {
       if (results[i].status !== 'fulfilled') {
         console.warn(results[i].reason);
@@ -358,7 +455,7 @@ async function refreshMarketExtras() {
       applyHourChange(SYMBOLS[i], results[i].value);
       if (alertSettings.enabled) maybeAlert(SYMBOLS[i], detectSpike(results[i].value));
     }
-    await refreshWeekChanges();
+    await Promise.allSettled([sparkP, weekP]);
   } catch (err) {
     console.warn(err);
   } finally {
@@ -589,7 +686,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=12').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=13').catch(() => {});
 }
 
 syncAlertUi();

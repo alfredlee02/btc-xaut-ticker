@@ -14,7 +14,7 @@
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>BTC · XAUT 行情</title>
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=13">
 </head>
 <body>
   <div class="refresh-hint" id="refreshHint" hidden>釋放以更新</div>
@@ -34,61 +34,67 @@
 
     <main class="cards">
       <article class="card" id="card-BTCUSDT" data-symbol="BTCUSDT">
-        <div class="card-head">
-          <img class="logo" src="icons/btc.svg" width="36" height="36" alt="" aria-hidden="true">
-          <div>
-            <h2>比特幣</h2>
-            <p class="ticker">BTC / USDT</p>
+        <svg class="spark" data-spark viewBox="0 0 240 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="card-body">
+          <div class="card-head">
+            <img class="logo" src="icons/btc.svg" width="36" height="36" alt="" aria-hidden="true">
+            <div>
+              <h2>比特幣</h2>
+              <p class="ticker">BTC / USDT</p>
+            </div>
           </div>
-        </div>
-        <div class="quote">
-          <p class="price" data-price>—</p>
-          <div class="change" data-change>
-            <span data-change-amt>—</span>
-            <span class="pill" data-change-pct>—</span>
+          <div class="quote">
+            <p class="price" data-price>—</p>
+            <div class="change" data-change>
+              <span data-change-amt>—</span>
+              <span class="pill" data-change-pct>—</span>
+            </div>
           </div>
-        </div>
-        <div class="periods">
-          <span class="period" data-chg-1h><em>1h</em> <b>—</b></span>
-          <span class="period" data-chg-7d><em>7d</em> <b>—</b></span>
-        </div>
-        <div class="range" hidden>
-          <div class="range-labels">
-            <span>24h 低 <b data-low>—</b></span>
-            <span>高 <b data-high>—</b></span>
+          <div class="periods">
+            <span class="period" data-chg-1h><em>1h</em> <b>—</b></span>
+            <span class="period" data-chg-7d><em>7d</em> <b>—</b></span>
           </div>
-          <div class="range-track"><i data-range-pos></i></div>
+          <div class="range" hidden>
+            <div class="range-labels">
+              <span>24h 低 <b data-low>—</b></span>
+              <span>高 <b data-high>—</b></span>
+            </div>
+            <div class="range-track"><i data-range-pos></i></div>
+          </div>
+          <p class="spike" data-spike hidden></p>
         </div>
-        <p class="spike" data-spike hidden></p>
       </article>
 
       <article class="card" id="card-XAUTUSDT" data-symbol="XAUTUSDT">
-        <div class="card-head">
-          <img class="logo" src="icons/xaut.svg" width="36" height="36" alt="" aria-hidden="true">
-          <div>
-            <h2>黃金</h2>
-            <p class="ticker">XAUT / USDT</p>
+        <svg class="spark" data-spark viewBox="0 0 240 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="card-body">
+          <div class="card-head">
+            <img class="logo" src="icons/xaut.svg" width="36" height="36" alt="" aria-hidden="true">
+            <div>
+              <h2>黃金</h2>
+              <p class="ticker">XAUT / USDT</p>
+            </div>
           </div>
-        </div>
-        <div class="quote">
-          <p class="price" data-price>—</p>
-          <div class="change" data-change>
-            <span data-change-amt>—</span>
-            <span class="pill" data-change-pct>—</span>
+          <div class="quote">
+            <p class="price" data-price>—</p>
+            <div class="change" data-change>
+              <span data-change-amt>—</span>
+              <span class="pill" data-change-pct>—</span>
+            </div>
           </div>
-        </div>
-        <div class="periods">
-          <span class="period" data-chg-1h><em>1h</em> <b>—</b></span>
-          <span class="period" data-chg-7d><em>7d</em> <b>—</b></span>
-        </div>
-        <div class="range" hidden>
-          <div class="range-labels">
-            <span>24h 低 <b data-low>—</b></span>
-            <span>高 <b data-high>—</b></span>
+          <div class="periods">
+            <span class="period" data-chg-1h><em>1h</em> <b>—</b></span>
+            <span class="period" data-chg-7d><em>7d</em> <b>—</b></span>
           </div>
-          <div class="range-track"><i data-range-pos></i></div>
+          <div class="range" hidden>
+            <div class="range-labels">
+              <span>24h 低 <b data-low>—</b></span>
+              <span>高 <b data-high>—</b></span>
+            </div>
+            <div class="range-track"><i data-range-pos></i></div>
+          </div>
+          <p class="spike" data-spike hidden></p>
         </div>
-        <p class="spike" data-spike hidden></p>
       </article>
     </main>
 
@@ -123,6 +129,6 @@
       <button type="button" id="dismissInstall">知道</button>
     </div>
   </div>
-  <script src="app.js?v=12"></script>
+  <script src="app.js?v=13"></script>
 </body>
 </html>
