@@ -84,6 +84,10 @@ function money(n) {
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function moneyInt(n) {
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
 function signed(n) {
   const v = Number(n);
   const s = money(Math.abs(v));
@@ -142,7 +146,7 @@ function applyTickers(tickers, { fromCache = false, updatedAt } = {}) {
     const prev = lastPrices[t.symbol];
 
     const priceEl = card.querySelector('[data-price]');
-    priceEl.textContent = money(price);
+    priceEl.textContent = moneyInt(price);
 
     if (!fromCache && prev != null && prev !== price) {
       priceEl.classList.remove('flash-up', 'flash-down');
@@ -585,7 +589,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=11').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=12').catch(() => {});
 }
 
 syncAlertUi();
