@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0c0f">
+  <meta name="color-scheme" content="dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="行情">
+  <meta name="description" content="BTC 同 XAUT 即時報價">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <title>BTC · XAUT 行情</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="refresh-hint" id="refreshHint" hidden>釋放以更新</div>
+  <div class="app">
+    <header class="top">
+      <div>
+        <h1>行情</h1>
+        <p class="status" id="status" aria-live="polite">載入中…</p>
+      </div>
+      <button class="icon-btn" id="refreshBtn" type="button" aria-label="重新整理">
+        <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+          <path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4V1L7 6l5 5V7c2.76 0 5 2.24 5 5a5 5 0 0 1-8.16 3.87l-1.46 1.46A7 7 0 0 0 19 12c0-1.93-.78-3.68-2.35-5.65zM6 12a5 5 0 0 1 8.16-3.87l1.46-1.46A7 7 0 0 0 5 12c0 1.93.78 3.68 2.35 5.65A7.95 7.95 0 0 0 12 20v3l5-5-5-5v3a5 5 0 0 1-5-5z"/>
+        </svg>
+      </button>
+    </header>
+
+    <main class="cards">
+      <article class="card" id="card-BTCUSDT" data-symbol="BTCUSDT">
+        <div class="card-head">
+          <span class="dot btc" aria-hidden="true"></span>
+          <div>
+            <h2>比特幣</h2>
+            <p class="ticker">BTC / USDT</p>
+          </div>
+        </div>
+        <p class="price" data-price>—</p>
+        <div class="change" data-change>
+          <span data-change-amt>—</span>
+          <span class="pill" data-change-pct>—</span>
+        </div>
+        <div class="range" hidden>
+          <div class="range-labels">
+            <span>24h 低 <b data-low>—</b></span>
+            <span>高 <b data-high>—</b></span>
+          </div>
+          <div class="range-track"><i data-range-pos></i></div>
+        </div>
+      </article>
+
+      <article class="card" id="card-XAUTUSDT" data-symbol="XAUTUSDT">
+        <div class="card-head">
+          <span class="dot xaut" aria-hidden="true"></span>
+          <div>
+            <h2>黃金</h2>
+            <p class="ticker">XAUT / USDT</p>
+          </div>
+        </div>
+        <p class="price" data-price>—</p>
+        <div class="change" data-change>
+          <span data-change-amt>—</span>
+          <span class="pill" data-change-pct>—</span>
+        </div>
+        <div class="range" hidden>
+          <div class="range-labels">
+            <span>24h 低 <b data-low>—</b></span>
+            <span>高 <b data-high>—</b></span>
+          </div>
+          <div class="range-track"><i data-range-pos></i></div>
+        </div>
+      </article>
+    </main>
+
+    <p class="footnote">價格來自 Binance 公開行情，僅供參考，唔構成任何投資建議。</p>
+
+    <div class="install" id="installBanner" hidden>
+      <p>想當 app 用：用 Safari 開，撳分享鈕，再選「加到主畫面」。</p>
+      <button type="button" id="dismissInstall">知道</button>
+    </div>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
