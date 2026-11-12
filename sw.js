@@ -1,4 +1,4 @@
-const CACHE = 'btc-xaut-quote-v3';
+const CACHE = 'btc-xaut-quote-v4';
 const ASSETS = [
   './',
   './index.html',
