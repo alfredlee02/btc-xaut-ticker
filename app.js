@@ -105,6 +105,7 @@ let alertEl = null;
 let htmlAudioUnlocked = false;
 let keepAliveSrc = null;
 let audioKeepAliveTimer = null;
+let htmlSilenceTimer = null;
 let toastTimer = null;
 let previewTimer = null;
 let wakeLock = null;
@@ -792,7 +793,19 @@ function loadAlertBuffer() {
   return alertBufferLoading;
 }
 
+function stopHtmlKeepAlive() {
+  clearTimeout(htmlSilenceTimer);
+  htmlSilenceTimer = null;
+  if (!alertEl) return;
+  try {
+    alertEl.volume = 0;
+    alertEl.loop = false;
+    alertEl.pause();
+  } catch { /* ignore */ }
+}
+
 function stopAudioKeepAlive() {
+  stopHtmlKeepAlive();
   if (keepAliveSrc) {
     try { keepAliveSrc.stop(); } catch { /* ignore */ }
     try { keepAliveSrc.disconnect(); } catch { /* ignore */ }
@@ -802,6 +815,23 @@ function stopAudioKeepAlive() {
     clearInterval(audioKeepAliveTimer);
     audioKeepAliveTimer = null;
   }
+}
+
+function startOscKeepAlive() {
+  const ctx = audioCtx;
+  if (!ctx || ctx.state !== 'running' || keepAliveSrc) return;
+  try {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 20;
+    osc.type = 'sine';
+    gain.gain.value = 0.0001;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.onended = () => { if (keepAliveSrc === osc) keepAliveSrc = null; };
+    osc.start();
+    keepAliveSrc = osc;
+  } catch { /* ignore */ }
 }
 
 function startAudioKeepAlive() {
@@ -816,48 +846,49 @@ function startAudioKeepAlive() {
       try { keepAliveSrc.stop(); } catch { /* ignore */ }
       keepAliveSrc = null;
     }
-    ctx.resume().then(() => startAudioKeepAlive()).catch(() => {});
-    if (!audioKeepAliveTimer) {
-      audioKeepAliveTimer = setInterval(startAudioKeepAlive, 5000);
-    }
-    return;
+    ctx.resume().then(() => {
+      startOscKeepAlive();
+    }).catch(() => {});
+  } else {
+    startOscKeepAlive();
   }
-  if (ctx && ctx.state === 'running' && !keepAliveSrc) {
-    try {
-      const buf = ctx.createBuffer(1, Math.max(1, Math.floor(ctx.sampleRate * 0.5)), ctx.sampleRate);
-      const src = ctx.createBufferSource();
-      const gain = ctx.createGain();
-      src.buffer = buf;
-      src.loop = true;
-      gain.gain.value = 0.00001;
-      src.connect(gain);
-      gain.connect(ctx.destination);
-      src.onended = () => { if (keepAliveSrc === src) keepAliveSrc = null; };
-      src.start();
-      keepAliveSrc = src;
-    } catch { /* ignore */ }
-  }
+  startHtmlKeepAlive();
   if (!audioKeepAliveTimer) {
     audioKeepAliveTimer = setInterval(startAudioKeepAlive, 5000);
   }
 }
 
-async function unlockHtmlAudio() {
+function alertDurationMs(el) {
+  const d = el?.duration;
+  if (Number.isFinite(d) && d > 0.2) return Math.ceil(d * 1000);
+  return 2400;
+}
+
+async function startHtmlKeepAlive() {
+  if (!alertSettings.enabled || document.visibilityState !== 'visible') {
+    stopHtmlKeepAlive();
+    return false;
+  }
   const el = ensureAlertEl();
-  if (!el || htmlAudioUnlocked) return htmlAudioUnlocked;
+  el.loop = true;
+  el.muted = false;
+  if (!htmlSilenceTimer) el.volume = 0;
+  if (!el.paused) {
+    htmlAudioUnlocked = true;
+    return true;
+  }
   try {
-    const prev = el.volume;
-    el.muted = false;
-    el.volume = 0;
+    if (el.ended || el.currentTime > 0) el.currentTime = 0;
     await el.play();
-    el.pause();
-    el.currentTime = 0;
-    el.volume = prev || Math.max(0.0001, alertSettings.volume);
     htmlAudioUnlocked = true;
     return true;
   } catch {
     return false;
   }
+}
+
+async function unlockHtmlAudio() {
+  return startHtmlKeepAlive();
 }
 
 async function unlockAudio({ preview = false } = {}) {
@@ -880,14 +911,29 @@ async function unlockAudio({ preview = false } = {}) {
 async function playAlertHtml(vol) {
   const el = ensureAlertEl();
   if (!el) return false;
+  clearTimeout(htmlSilenceTimer);
+  el.muted = false;
+  el.loop = true;
+  el.volume = vol;
+  const armSilence = () => {
+    htmlSilenceTimer = setTimeout(() => {
+      htmlSilenceTimer = null;
+      if (alertSettings.enabled && document.visibilityState === 'visible') {
+        el.volume = 0;
+      }
+    }, alertDurationMs(el) + 40);
+  };
   try {
-    el.pause();
-    el.currentTime = 0;
-    el.muted = false;
-    el.volume = vol;
-    await el.play();
+    if (el.paused) {
+      el.currentTime = 0;
+      await el.play();
+    } else {
+      el.currentTime = 0;
+    }
+    armSilence();
     return true;
   } catch {
+    el.volume = 0;
     return false;
   }
 }
@@ -900,6 +946,10 @@ function playAlert() {
 async function playAlertNow() {
   const ctx = ensureAudio();
   const vol = Math.max(0.0001, alertSettings.volume);
+
+  // Prefer the already-playing HTML element: just raise volume and rewind.
+  // This does not need a new tap, unlike audio.play() or a suspended AudioContext.
+  if (await playAlertHtml(vol)) return;
 
   if (ctx && ctx.state !== 'running') {
     try { await ctx.resume(); } catch { /* ignore */ }
@@ -917,12 +967,9 @@ async function playAlertNow() {
         gain.connect(ctx.destination);
         src.start();
         startAudioKeepAlive();
-        return;
-      } catch { /* fall through to HTML audio */ }
+      } catch { /* ignore */ }
     }
   }
-
-  await playAlertHtml(vol);
 }
 
 function syncAlertUi() {
@@ -1294,7 +1341,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=22').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=23').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));
