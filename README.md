@@ -5,3 +5,5 @@
 ## 用法
 
 用電話瀏覽器打開 Pages 網址，再揀「加到主畫面」。價格只供參考，唔構成任何投資建議。
+
+卡片圖示用 Bitcoin 官方圓標（[bitcoin-brand](https://github.com/bitpay/bitcoin-brand)，CC0）同 [Tether 媒體頁](https://tether.to/en/media/) 嘅 Tether Gold 圓標。
