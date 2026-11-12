@@ -14,7 +14,7 @@
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>BTC · XAUT 行情</title>
-  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="styles.css?v=14">
 </head>
 <body>
   <div class="refresh-hint" id="refreshHint" hidden>釋放以更新</div>
@@ -33,16 +33,21 @@
     </header>
 
     <main class="cards">
-      <article class="card" id="card-BTCUSDT" data-symbol="BTCUSDT">
+      <article class="card" id="card-0" data-slot="0" data-symbol="BTCUSDT">
         <svg class="spark" data-spark viewBox="0 0 240 100" preserveAspectRatio="none" aria-hidden="true"></svg>
         <div class="card-body">
-          <div class="card-head">
-            <img class="logo" src="icons/btc.svg" width="36" height="36" alt="" aria-hidden="true">
-            <div>
-              <h2>比特幣</h2>
-              <p class="ticker">BTC / USDT</p>
-            </div>
-          </div>
+          <button class="card-head" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="揀幣種，而家係比特幣">
+            <span class="logo-slot" data-logo>
+              <img class="logo" src="icons/btc.svg" width="36" height="36" alt="" aria-hidden="true">
+            </span>
+            <span class="head-text">
+              <span class="coin-name" data-name>比特幣</span>
+              <span class="ticker" data-ticker>BTC / USDT</span>
+            </span>
+            <svg class="chevron" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path fill="currentColor" d="M4.2 6.2a.75.75 0 0 1 1.06 0L8 8.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L4.2 7.26a.75.75 0 0 1 0-1.06z"/>
+            </svg>
+          </button>
           <div class="quote">
             <p class="price" data-price>—</p>
             <div class="change" data-change>
@@ -65,16 +70,21 @@
         </div>
       </article>
 
-      <article class="card" id="card-XAUTUSDT" data-symbol="XAUTUSDT">
+      <article class="card" id="card-1" data-slot="1" data-symbol="XAUTUSDT">
         <svg class="spark" data-spark viewBox="0 0 240 100" preserveAspectRatio="none" aria-hidden="true"></svg>
         <div class="card-body">
-          <div class="card-head">
-            <img class="logo" src="icons/xaut.svg" width="36" height="36" alt="" aria-hidden="true">
-            <div>
-              <h2>黃金</h2>
-              <p class="ticker">XAUT / USDT</p>
-            </div>
-          </div>
+          <button class="card-head" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="揀幣種，而家係黃金">
+            <span class="logo-slot" data-logo>
+              <img class="logo" src="icons/xaut.svg" width="36" height="36" alt="" aria-hidden="true">
+            </span>
+            <span class="head-text">
+              <span class="coin-name" data-name>黃金</span>
+              <span class="ticker" data-ticker>XAUT / USDT</span>
+            </span>
+            <svg class="chevron" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <path fill="currentColor" d="M4.2 6.2a.75.75 0 0 1 1.06 0L8 8.94l2.74-2.74a.75.75 0 1 1 1.06 1.06l-3.27 3.27a.75.75 0 0 1-1.06 0L4.2 7.26a.75.75 0 0 1 0-1.06z"/>
+            </svg>
+          </button>
           <div class="quote">
             <p class="price" data-price>—</p>
             <div class="change" data-change>
@@ -129,6 +139,24 @@
       <button type="button" id="dismissInstall">知道</button>
     </div>
   </div>
-  <script src="app.js?v=13"></script>
+
+  <div class="picker" id="picker" hidden>
+    <div class="picker-backdrop" data-picker-close></div>
+    <div class="picker-sheet" role="dialog" aria-modal="true" aria-labelledby="pickerTitle" tabindex="-1">
+      <div class="picker-handle" aria-hidden="true"></div>
+      <div class="picker-top">
+        <h3 id="pickerTitle">揀幣種</h3>
+        <button type="button" class="picker-close" id="pickerClose" data-picker-close aria-label="關閉">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path fill="currentColor" d="M18.3 5.71a1 1 0 0 0-1.41 0L12 10.59 7.11 5.7A1 1 0 0 0 5.7 7.11L10.59 12 5.7 16.89a1 1 0 1 0 1.41 1.41L12 13.41l4.89 4.89a1 1 0 0 0 1.41-1.41L13.41 12l4.89-4.89a1 1 0 0 0 0-1.4z"/>
+          </svg>
+        </button>
+      </div>
+      <p class="picker-sub" id="pickerSub">Binance USDT 成交額頭 20，名單會跟成交量更新。</p>
+      <div class="picker-list" id="pickerList" role="listbox" aria-labelledby="pickerTitle"></div>
+    </div>
+  </div>
+
+  <script src="app.js?v=14"></script>
 </body>
 </html>

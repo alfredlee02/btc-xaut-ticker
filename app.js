@@ -1,6 +1,8 @@
-const SYMBOLS = ['BTCUSDT', 'XAUTUSDT'];
-const NAMES = { BTCUSDT: '比特幣', XAUTUSDT: '黃金' };
-const API = 'https://api.binance.com/api/v3/ticker/24hr?symbols=' + encodeURIComponent(JSON.stringify(SYMBOLS));
+const DEFAULT_PAIRS = ['BTCUSDT', 'XAUTUSDT'];
+const PAIRS_KEY = 'btc-xaut-pairs-v1';
+const TOP_N = 20;
+const UNIVERSE_MS = 12 * 60 * 1000;
+const TICKER_URL = 'https://api.binance.com/api/v3/ticker/24hr';
 const POLL_MS = 5000;
 const KLINE_MS = 15000;
 const KLINE_LIMIT = 180;
@@ -13,6 +15,51 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const WEEK_TTL = 60000;
 const SPARK_TTL = 60000;
 const TZ = 'Asia/Hong_Kong';
+const PAIR_RE = /^[A-Z0-9]{2,20}USDT$/;
+const LEVERAGED_RE = /(?:[A-Z0-9]{2,}(?:UP|DOWN|BULL|BEAR)|[0-9]+[LS])$/;
+
+const NAMES = {
+  BTCUSDT: '比特幣',
+  XAUTUSDT: '黃金',
+  ETHUSDT: '以太幣',
+  SOLUSDT: 'Solana',
+  BNBUSDT: '幣安幣',
+  XRPUSDT: '瑞波幣',
+  DOGEUSDT: '狗狗幣',
+  ADAUSDT: '艾達幣',
+  AVAXUSDT: 'Avalanche',
+  DOTUSDT: '波卡',
+  TRXUSDT: '波場',
+  LINKUSDT: 'Chainlink',
+  MATICUSDT: 'Polygon',
+  POLUSDT: 'Polygon',
+  LTCUSDT: '萊特幣',
+  BCHUSDT: '比特幣現金',
+  ATOMUSDT: 'Cosmos',
+  NEARUSDT: 'NEAR',
+  APTUSDT: 'Aptos',
+  ARBUSDT: 'Arbitrum',
+  OPUSDT: 'Optimism',
+  SUIUSDT: 'Sui',
+  TONUSDT: 'Toncoin',
+  SHIBUSDT: '柴犬幣',
+  PEPEUSDT: 'Pepe',
+  UNIUSDT: 'Uniswap',
+  AAVEUSDT: 'Aave',
+  FILUSDT: 'Filecoin',
+  INJUSDT: 'Injective',
+  SEIUSDT: 'Sei',
+  TIAUSDT: 'Celestia',
+  WIFUSDT: 'dogwifhat',
+  TAOUSDT: 'Bittensor',
+  RENDERUSDT: 'Render',
+  HBARUSDT: 'Hedera',
+  ETCUSDT: '以太經典',
+  USDCUSDT: 'USD Coin',
+  FDUSDUSDT: 'First Digital USD',
+  ZECUSDT: 'Zcash',
+  HYPEUSDT: 'Hyperliquid',
+};
 
 const statusEl = document.getElementById('status');
 const refreshBtn = document.getElementById('refreshBtn');
@@ -26,6 +73,10 @@ const alertBar = document.getElementById('alertBar');
 const alertToast = document.getElementById('alertToast');
 const wakeToggle = document.getElementById('wakeToggle');
 const wakeHint = document.getElementById('wakeHint');
+const pickerEl = document.getElementById('picker');
+const pickerList = document.getElementById('pickerList');
+const pickerSub = document.getElementById('pickerSub');
+const pickerSheet = pickerEl.querySelector('.picker-sheet');
 
 const WAKE_HINT = '開咗就盡量唔讓電話自動熄屏，方便放係度睇。';
 const WAKE_UNAVAILABLE = '呢部裝置暫時唔支援螢幕常亮。';
@@ -34,21 +85,162 @@ const wakeSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigato
 
 const DEFAULT_HINT = '1 或 5 分鐘成交額遠高過近 3 小時水平就會出聲。要 app 開住先會响；電話靜音可能唔會响。';
 const UNLOCK_HINT = '撳呢度開啟提示聲。之後要 app 開住先會响。';
+const PICKER_SUB = 'Binance USDT 成交額頭 20，名單會跟成交量更新。';
 
 const lastPrices = {};
 const lastAlertAt = {};
 const lastAlertCandle = {};
 let timer = null;
 let klineTimer = null;
+let universeTimer = null;
 let inFlight = false;
 let klineInFlight = false;
+let extrasGen = 0;
+let tickerGen = 0;
 let audioCtx = null;
 let audioUnlocked = false;
 let toastTimer = null;
 let previewTimer = null;
 let wakeLock = null;
+let pickerSlot = 0;
+let pickerReturnFocus = null;
+let universeInFlight = false;
 const weekCache = {};
 const sparkCache = {};
+const universeCache = { at: 0, list: [], bySymbol: {}, error: false };
+
+function loadPairs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PAIRS_KEY) || 'null');
+    if (
+      Array.isArray(raw) &&
+      raw.length === 2 &&
+      raw.every((s) => typeof s === 'string' && PAIR_RE.test(s)) &&
+      raw[0] !== raw[1]
+    ) {
+      return raw;
+    }
+  } catch { /* ignore */ }
+  return [...DEFAULT_PAIRS];
+}
+
+function savePairs() {
+  localStorage.setItem(PAIRS_KEY, JSON.stringify(SYMBOLS));
+}
+
+let SYMBOLS = loadPairs();
+
+function tickerUrl(symbols) {
+  return TICKER_URL + '?symbols=' + encodeURIComponent(JSON.stringify(symbols));
+}
+
+function baseAsset(symbol) {
+  return symbol.endsWith('USDT') ? symbol.slice(0, -4) : symbol;
+}
+
+function displayName(symbol) {
+  return NAMES[symbol] || baseAsset(symbol);
+}
+
+function tickerLabel(symbol) {
+  return baseAsset(symbol) + ' / USDT';
+}
+
+function isLeveragedToken(symbol) {
+  return LEVERAGED_RE.test(baseAsset(symbol));
+}
+
+function cardAt(slot) {
+  return document.getElementById('card-' + slot);
+}
+
+function cardFor(symbol) {
+  return document.querySelector('.card[data-symbol="' + symbol + '"]');
+}
+
+function logoNode(symbol, size) {
+  if (symbol === 'BTCUSDT' || symbol === 'XAUTUSDT') {
+    const img = document.createElement('img');
+    img.className = 'logo';
+    img.src = symbol === 'BTCUSDT' ? 'icons/btc.svg' : 'icons/xaut.svg';
+    img.width = size;
+    img.height = size;
+    img.alt = '';
+    img.setAttribute('aria-hidden', 'true');
+    return img;
+  }
+  const span = document.createElement('span');
+  span.className = 'logo avatar';
+  span.setAttribute('aria-hidden', 'true');
+  const base = baseAsset(symbol);
+  span.textContent = base.length <= 4 ? base : base.slice(0, 4);
+  let hash = 0;
+  for (let i = 0; i < base.length; i++) hash = (hash * 31 + base.charCodeAt(i)) >>> 0;
+  span.style.background = 'hsl(' + (hash % 360) + ' 26% 30%)';
+  return span;
+}
+
+function paintCardIdentity(card, symbol) {
+  card.dataset.symbol = symbol;
+  card.querySelector('[data-name]').textContent = displayName(symbol);
+  card.querySelector('[data-ticker]').textContent = tickerLabel(symbol);
+  const slot = card.querySelector('[data-logo]');
+  slot.replaceChildren(logoNode(symbol, 36));
+  const head = card.querySelector('.card-head');
+  head.setAttribute('aria-label', '揀幣種，而家係' + displayName(symbol));
+}
+
+function resetCardVisuals(card) {
+  const priceEl = card.querySelector('[data-price]');
+  priceEl.textContent = '—';
+  priceEl.classList.remove('flash-up', 'flash-down', 'price-long');
+  const changeBox = card.querySelector('[data-change]');
+  changeBox.className = 'change';
+  card.querySelector('[data-change-amt]').textContent = '—';
+  card.querySelector('[data-change-pct]').textContent = '—';
+  for (const key of ['1h', '7d']) {
+    const el = card.querySelector('[data-chg-' + key + ']');
+    if (!el) continue;
+    el.querySelector('b').textContent = '—';
+    el.classList.remove('up', 'down');
+  }
+  card.querySelector('.range').hidden = true;
+  const spikeEl = card.querySelector('[data-spike]');
+  if (spikeEl) {
+    spikeEl.hidden = true;
+    spikeEl.textContent = '';
+  }
+  card.classList.remove('spiking');
+  const svg = card.querySelector('[data-spark]');
+  if (svg) {
+    svg.replaceChildren();
+    svg.setAttribute('class', 'spark');
+  }
+}
+
+function applyPairs(next) {
+  const prev = [...SYMBOLS];
+  SYMBOLS = next;
+  savePairs();
+  for (let i = 0; i < SYMBOLS.length; i++) {
+    const card = cardAt(i);
+    const changed = prev[i] !== SYMBOLS[i];
+    paintCardIdentity(card, SYMBOLS[i]);
+    if (changed) resetCardVisuals(card);
+  }
+  for (const s of prev) {
+    if (!SYMBOLS.includes(s)) {
+      delete lastPrices[s];
+      delete lastAlertAt[s];
+      delete lastAlertCandle[s];
+    }
+  }
+  extrasGen += 1;
+  klineInFlight = false;
+  tickerGen += 1;
+  inFlight = false;
+  refresh({ manual: true });
+}
 
 function loadWakeEnabled() {
   try {
@@ -86,13 +278,42 @@ function money(n) {
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function moneyInt(n) {
-  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+function moneyPrice(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  const abs = Math.abs(v);
+  if (abs >= 100) {
+    return v.toLocaleString('en-US', { maximumFractionDigits: 0 });
+  }
+  if (abs >= 1) {
+    return v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  }
+  if (abs === 0) return '0.00';
+  const maxFrac = Math.min(10, Math.max(4, -Math.floor(Math.log10(abs)) + 3));
+  return v.toLocaleString('en-US', {
+    minimumFractionDigits: Math.min(4, maxFrac),
+    maximumFractionDigits: maxFrac,
+  });
+}
+
+function moneyRange(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  const abs = Math.abs(v);
+  if (abs === 0 || abs >= 0.01) return money(v);
+  return moneyPrice(v);
 }
 
 function signed(n) {
   const v = Number(n);
   const s = money(Math.abs(v));
+  return (v > 0 ? '+' : v < 0 ? '−' : '') + s;
+}
+
+function signedAmt(n) {
+  const v = Number(n);
+  const abs = Math.abs(v);
+  const s = abs === 0 || abs >= 0.01 ? money(abs) : moneyPrice(abs);
   return (v > 0 ? '+' : v < 0 ? '−' : '') + s;
 }
 
@@ -137,7 +358,7 @@ function saveCache(payload) {
 
 function applyTickers(tickers, { fromCache = false, updatedAt } = {}) {
   for (const t of tickers) {
-    const card = document.getElementById('card-' + t.symbol);
+    const card = cardFor(t.symbol);
     if (!card) continue;
 
     const price = Number(t.lastPrice);
@@ -148,7 +369,9 @@ function applyTickers(tickers, { fromCache = false, updatedAt } = {}) {
     const prev = lastPrices[t.symbol];
 
     const priceEl = card.querySelector('[data-price]');
-    priceEl.textContent = moneyInt(price);
+    const text = moneyPrice(price);
+    priceEl.textContent = text;
+    priceEl.classList.toggle('price-long', text.length > 9);
 
     if (!fromCache && prev != null && prev !== price) {
       priceEl.classList.remove('flash-up', 'flash-down');
@@ -161,14 +384,14 @@ function applyTickers(tickers, { fromCache = false, updatedAt } = {}) {
     const changeBox = card.querySelector('[data-change]');
     const dir = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
     changeBox.className = 'change' + (dir ? ' ' + dir : '');
-    card.querySelector('[data-change-amt]').textContent = signed(change);
+    card.querySelector('[data-change-amt]').textContent = signedAmt(change);
     card.querySelector('[data-change-pct]').textContent = signed(pct) + '%';
 
     const range = card.querySelector('.range');
     range.hidden = !(high > low);
     if (high > low) {
-      card.querySelector('[data-low]').textContent = money(low);
-      card.querySelector('[data-high]').textContent = money(high);
+      card.querySelector('[data-low]').textContent = moneyRange(low);
+      card.querySelector('[data-high]').textContent = moneyRange(high);
       const pos = Math.min(100, Math.max(0, ((price - low) / (high - low)) * 100));
       card.querySelector('[data-range-pos]').style.left = pos + '%';
     }
@@ -182,19 +405,23 @@ function applyTickers(tickers, { fromCache = false, updatedAt } = {}) {
 }
 
 async function refresh({ manual = false } = {}) {
-  if (inFlight) return;
-  inFlight = true;
+  if (inFlight && !manual) return;
   if (manual) refreshBtn.classList.add('spin');
+  const gen = ++tickerGen;
+  const symbols = [...SYMBOLS];
+  inFlight = true;
 
   try {
-    const res = await fetch(API, { cache: 'no-store' });
+    const res = await fetch(tickerUrl(symbols), { cache: 'no-store' });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const tickers = await res.json();
+    if (gen !== tickerGen) return;
     const updatedAt = Date.now();
-    saveCache({ tickers, updatedAt });
+    saveCache({ tickers, updatedAt, symbols });
     applyTickers(tickers, { updatedAt });
     refreshMarketExtras();
   } catch (err) {
+    if (gen !== tickerGen) return;
     const cache = loadCache();
     if (cache?.tickers) {
       applyTickers(cache.tickers, { fromCache: true, updatedAt: cache.updatedAt });
@@ -203,7 +430,7 @@ async function refresh({ manual = false } = {}) {
     }
     console.warn(err);
   } finally {
-    inFlight = false;
+    if (gen === tickerGen) inFlight = false;
     setTimeout(() => refreshBtn.classList.remove('spin'), 400);
   }
 }
@@ -216,7 +443,11 @@ function startPolling() {
   klineTimer = setInterval(() => {
     if (document.visibilityState === 'visible') refreshMarketExtras();
   }, KLINE_MS);
+  universeTimer = setInterval(() => {
+    if (document.visibilityState === 'visible') refreshUniverse();
+  }, UNIVERSE_MS);
   refreshMarketExtras();
+  refreshUniverse();
 }
 
 function stopPolling() {
@@ -227,6 +458,10 @@ function stopPolling() {
   if (klineTimer) {
     clearInterval(klineTimer);
     klineTimer = null;
+  }
+  if (universeTimer) {
+    clearInterval(universeTimer);
+    universeTimer = null;
   }
 }
 
@@ -291,7 +526,7 @@ function changePct(now, then) {
 }
 
 function applyPeriod(symbol, key, pct) {
-  const el = document.getElementById('card-' + symbol)?.querySelector('[data-chg-' + key + ']');
+  const el = cardFor(symbol)?.querySelector('[data-chg-' + key + ']');
   if (!el) return;
   const b = el.querySelector('b');
   if (pct == null || Number.isNaN(pct)) {
@@ -339,9 +574,9 @@ async function fetchWeekChange(symbol) {
   return pct;
 }
 
-async function refreshWeekChanges() {
-  const results = await Promise.allSettled(SYMBOLS.map(fetchWeekChange));
-  SYMBOLS.forEach((symbol, i) => {
+async function refreshWeekChanges(symbols) {
+  const results = await Promise.allSettled(symbols.map(fetchWeekChange));
+  symbols.forEach((symbol, i) => {
     if (results[i].status === 'fulfilled') applyPeriod(symbol, '7d', results[i].value);
   });
 }
@@ -401,7 +636,7 @@ function smoothLine(points) {
 }
 
 function applySparkline(symbol, closes) {
-  const svg = document.getElementById('card-' + symbol)?.querySelector('[data-spark]');
+  const svg = cardFor(symbol)?.querySelector('[data-spark]');
   if (!svg) return;
   svg.replaceChildren();
   const points = sparkCoords(closes);
@@ -429,9 +664,9 @@ function applySparkline(symbol, closes) {
   svg.append(fill, line);
 }
 
-async function refreshSparklines() {
-  const results = await Promise.allSettled(SYMBOLS.map(fetchSparkline));
-  SYMBOLS.forEach((symbol, i) => {
+async function refreshSparklines(symbols) {
+  const results = await Promise.allSettled(symbols.map(fetchSparkline));
+  symbols.forEach((symbol, i) => {
     if (results[i].status === 'fulfilled') applySparkline(symbol, results[i].value);
     else console.warn(results[i].reason);
   });
@@ -441,30 +676,35 @@ async function refreshMarketExtras() {
   if (document.visibilityState === 'hidden') return;
   if (klineInFlight) return;
   klineInFlight = true;
+  const gen = ++extrasGen;
+  const symbols = [...SYMBOLS];
   try {
-    const klineP = Promise.allSettled(SYMBOLS.map(fetchKlines));
-    const sparkP = refreshSparklines();
-    const weekP = refreshWeekChanges();
+    const klineP = Promise.allSettled(symbols.map(fetchKlines));
+    const sparkP = refreshSparklines(symbols);
+    const weekP = refreshWeekChanges(symbols);
 
     const results = await klineP;
-    for (let i = 0; i < SYMBOLS.length; i++) {
+    if (gen !== extrasGen) return;
+    for (let i = 0; i < symbols.length; i++) {
       if (results[i].status !== 'fulfilled') {
         console.warn(results[i].reason);
         continue;
       }
-      applyHourChange(SYMBOLS[i], results[i].value);
-      if (alertSettings.enabled) maybeAlert(SYMBOLS[i], detectSpike(results[i].value));
+      if (!SYMBOLS.includes(symbols[i])) continue;
+      applyHourChange(symbols[i], results[i].value);
+      if (alertSettings.enabled) maybeAlert(symbols[i], detectSpike(results[i].value));
     }
     await Promise.allSettled([sparkP, weekP]);
   } catch (err) {
     console.warn(err);
   } finally {
-    klineInFlight = false;
+    if (gen === extrasGen) klineInFlight = false;
   }
 }
 
 function maybeAlert(symbol, spike) {
   if (!spike) return;
+  if (!SYMBOLS.includes(symbol)) return;
   const now = Date.now();
   if (lastAlertCandle[symbol] === spike.candleOpen) return;
   if (lastAlertAt[symbol] && now - lastAlertAt[symbol] < COOLDOWN_MS) return;
@@ -472,12 +712,13 @@ function maybeAlert(symbol, spike) {
   lastAlertAt[symbol] = now;
   lastAlertCandle[symbol] = spike.candleOpen;
 
-  const text = NAMES[symbol] + ' ' + spike.window + ' 分鐘成交急升 · 約 ' + formatQuote(spike.volume);
-  const card = document.getElementById('card-' + symbol);
+  const name = displayName(symbol);
+  const text = name + ' ' + spike.window + ' 分鐘成交急升 · 約 ' + formatQuote(spike.volume);
+  const card = cardFor(symbol);
   const spikeEl = card?.querySelector('[data-spike]');
   if (spikeEl) {
     spikeEl.hidden = false;
-    spikeEl.textContent = text.replace(NAMES[symbol] + ' ', '');
+    spikeEl.textContent = text.replace(name + ' ', '');
   }
   card?.classList.add('spiking');
   setTimeout(() => card?.classList.remove('spiking'), 4000);
@@ -508,7 +749,7 @@ async function unlockAudio({ preview = false } = {}) {
     audioUnlocked = false;
   }
   syncAlertUi();
-  if (audioUnlocked && preview) playAlert('BTCUSDT');
+  if (audioUnlocked && preview) playAlert(SYMBOLS[0] || 'BTCUSDT');
   return audioUnlocked;
 }
 
@@ -548,6 +789,192 @@ function syncAlertUi() {
   }
 }
 
+function summarizeTicker(t) {
+  return {
+    symbol: t.symbol,
+    quoteVolume: Number(t.quoteVolume) || 0,
+    priceChangePercent: Number(t.priceChangePercent) || 0,
+    lastPrice: Number(t.lastPrice) || 0,
+  };
+}
+
+function buildUniverse(tickers) {
+  const eligible = [];
+  const bySymbol = {};
+  for (const t of tickers) {
+    const symbol = t.symbol;
+    if (!symbol || !symbol.endsWith('USDT') || isLeveragedToken(symbol)) continue;
+    const row = summarizeTicker(t);
+    bySymbol[symbol] = row;
+    if (row.quoteVolume > 0 && row.lastPrice > 0) eligible.push(row);
+  }
+  eligible.sort((a, b) => b.quoteVolume - a.quoteVolume);
+  return { list: eligible.slice(0, TOP_N), bySymbol };
+}
+
+function pickerEntries() {
+  const top = universeCache.list || [];
+  const inTop = new Set(top.map((r) => r.symbol));
+  const extras = [];
+  const must = [...DEFAULT_PAIRS, ...SYMBOLS];
+  for (const symbol of must) {
+    if (inTop.has(symbol) || extras.some((r) => r.symbol === symbol)) continue;
+    extras.push(universeCache.bySymbol[symbol] || {
+      symbol,
+      quoteVolume: 0,
+      priceChangePercent: 0,
+      lastPrice: 0,
+    });
+  }
+  return { top, extras };
+}
+
+function renderPickerList() {
+  const { top, extras } = pickerEntries();
+  const selected = SYMBOLS[pickerSlot];
+  pickerList.replaceChildren();
+
+  if (!top.length && !universeCache.at) {
+    const p = document.createElement('p');
+    p.className = 'picker-status';
+    p.textContent = universeInFlight ? '正在載入幣種名單…' : '暫時攞唔到名單，顯示預設幣種。';
+    pickerList.append(p);
+  } else if (universeCache.error && !top.length) {
+    const p = document.createElement('p');
+    p.className = 'picker-status';
+    p.textContent = '暫時攞唔到最新名單，顯示預設同你而家揀緊嘅幣。';
+    pickerList.append(p);
+  }
+
+  const appendItems = (rows) => {
+    for (const row of rows) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'picker-item';
+      btn.setAttribute('role', 'option');
+      btn.dataset.symbol = row.symbol;
+      const isSel = row.symbol === selected;
+      btn.setAttribute('aria-selected', isSel ? 'true' : 'false');
+
+      btn.append(logoNode(row.symbol, 32));
+
+      const id = document.createElement('span');
+      id.className = 'picker-id';
+      const name = document.createElement('strong');
+      name.textContent = displayName(row.symbol);
+      const tick = document.createElement('span');
+      tick.textContent = tickerLabel(row.symbol);
+      id.append(name, tick);
+
+      const meta = document.createElement('span');
+      meta.className = 'picker-meta';
+      const pct = document.createElement('span');
+      const p = row.priceChangePercent;
+      pct.className = 'pct' + (p > 0 ? ' up' : p < 0 ? ' down' : '');
+      pct.textContent = row.lastPrice || row.quoteVolume ? signed(p) + '%' : '—';
+      const vol = document.createElement('span');
+      vol.textContent = row.quoteVolume ? formatQuote(row.quoteVolume) : '—';
+      meta.append(pct, vol);
+
+      const check = document.createElement('span');
+      check.className = 'picker-check';
+      check.textContent = isSel ? '✓' : '';
+      check.setAttribute('aria-hidden', 'true');
+
+      btn.append(id, meta, check);
+      btn.addEventListener('click', () => selectPair(pickerSlot, row.symbol));
+      pickerList.append(btn);
+    }
+  };
+
+  if (top.length) {
+    appendItems(top);
+  }
+  if (extras.length) {
+    const sep = document.createElement('p');
+    sep.className = 'picker-sep';
+    sep.textContent = top.length ? '預設或你而家揀緊（唔喺頭 20）' : '預設同你而家揀緊';
+    pickerList.append(sep);
+    appendItems(extras);
+  }
+
+  pickerSub.textContent = top.length
+    ? PICKER_SUB
+    : (universeInFlight ? '正在載入最新成交量排名…' : PICKER_SUB);
+}
+
+async function refreshUniverse({ force = false } = {}) {
+  if (!force && universeCache.at && Date.now() - universeCache.at < UNIVERSE_MS && universeCache.list.length) {
+    return universeCache;
+  }
+  if (universeInFlight) return universeCache;
+  universeInFlight = true;
+  if (!pickerEl.hidden) renderPickerList();
+  try {
+    const res = await fetch(TICKER_URL, { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const tickers = await res.json();
+    const { list, bySymbol } = buildUniverse(tickers);
+    universeCache.at = Date.now();
+    universeCache.list = list;
+    universeCache.bySymbol = bySymbol;
+    universeCache.error = false;
+  } catch (err) {
+    console.warn(err);
+    universeCache.error = true;
+  } finally {
+    universeInFlight = false;
+    if (!pickerEl.hidden) renderPickerList();
+  }
+  return universeCache;
+}
+
+function openPicker(slot, trigger) {
+  pickerSlot = slot;
+  pickerReturnFocus = trigger || cardAt(slot).querySelector('.card-head');
+  pickerEl.hidden = false;
+  document.body.classList.add('picker-open');
+  document.querySelectorAll('.card-head').forEach((el, i) => {
+    el.setAttribute('aria-expanded', i === slot ? 'true' : 'false');
+  });
+  renderPickerList();
+  refreshUniverse().then(() => {
+    if (!pickerEl.hidden && pickerSlot === slot) renderPickerList();
+  });
+  const closeBtn = document.getElementById('pickerClose');
+  (closeBtn || pickerSheet).focus();
+}
+
+function closePicker() {
+  if (pickerEl.hidden) return;
+  pickerEl.hidden = true;
+  document.body.classList.remove('picker-open');
+  document.querySelectorAll('.card-head').forEach((el) => {
+    el.setAttribute('aria-expanded', 'false');
+  });
+  pickerReturnFocus?.focus?.();
+  pickerReturnFocus = null;
+}
+
+function selectPair(slot, symbol) {
+  if (!PAIR_RE.test(symbol)) return;
+  const next = [...SYMBOLS];
+  const other = slot === 0 ? 1 : 0;
+  if (next[slot] === symbol) {
+    closePicker();
+    return;
+  }
+  if (next[other] === symbol) {
+    const tmp = next[0];
+    next[0] = next[1];
+    next[1] = tmp;
+  } else {
+    next[slot] = symbol;
+  }
+  applyPairs(next);
+  closePicker();
+}
+
 refreshBtn.addEventListener('click', () => refresh({ manual: true }));
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
@@ -580,6 +1007,24 @@ alertVolume.addEventListener('input', () => {
   saveAlertSettings();
   clearTimeout(previewTimer);
   previewTimer = setTimeout(() => unlockAudio({ preview: true }), 180);
+});
+
+document.querySelectorAll('.card-head').forEach((head) => {
+  head.addEventListener('click', () => {
+    const slot = Number(head.closest('.card')?.dataset.slot);
+    if (Number.isInteger(slot)) openPicker(slot, head);
+  });
+});
+
+pickerEl.addEventListener('click', (e) => {
+  if (e.target.closest('[data-picker-close]')) closePicker();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !pickerEl.hidden) {
+    e.preventDefault();
+    closePicker();
+  }
 });
 
 
@@ -645,6 +1090,7 @@ let pulling = false;
 const THRESHOLD = 64;
 
 document.addEventListener('touchstart', (e) => {
+  if (!pickerEl.hidden) return;
   if (window.scrollY <= 0) {
     startY = e.touches[0].clientY;
     pulling = true;
@@ -653,6 +1099,11 @@ document.addEventListener('touchstart', (e) => {
 
 document.addEventListener('touchmove', (e) => {
   if (!pulling) return;
+  if (!pickerEl.hidden) {
+    pulling = false;
+    refreshHint.hidden = true;
+    return;
+  }
   const dy = e.touches[0].clientY - startY;
   if (dy > 24) {
     refreshHint.hidden = false;
@@ -665,6 +1116,7 @@ document.addEventListener('touchend', (e) => {
   const dy = (e.changedTouches[0]?.clientY || 0) - startY;
   pulling = false;
   refreshHint.hidden = true;
+  if (!pickerEl.hidden) return;
   if (dy > THRESHOLD) refresh({ manual: true });
 }, { passive: true });
 
@@ -686,9 +1138,10 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=13').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=14').catch(() => {});
 }
 
+SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));
 syncAlertUi();
 syncWakeUi();
 applyWakeLock();
