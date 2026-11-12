@@ -99,6 +99,8 @@ let extrasGen = 0;
 let tickerGen = 0;
 let audioCtx = null;
 let audioUnlocked = false;
+let alertBuffer = null;
+let alertBufferLoading = null;
 let toastTimer = null;
 let previewTimer = null;
 let wakeLock = null;
@@ -747,6 +749,36 @@ function ensureAudio() {
   return audioCtx;
 }
 
+function decodeAlertData(ctx, data) {
+  return new Promise((resolve, reject) => {
+    const ret = ctx.decodeAudioData(data, resolve, reject);
+    if (ret && typeof ret.then === 'function') ret.then(resolve, reject);
+  });
+}
+
+function loadAlertBuffer() {
+  if (alertBuffer) return Promise.resolve(alertBuffer);
+  if (alertBufferLoading) return alertBufferLoading;
+  const ctx = ensureAudio();
+  if (!ctx) return Promise.resolve(null);
+  alertBufferLoading = fetch('sounds/alert.mp3')
+    .then((res) => {
+      if (!res.ok) throw new Error('alert sound missing');
+      return res.arrayBuffer();
+    })
+    .then((data) => decodeAlertData(ctx, data))
+    .then((buf) => {
+      alertBuffer = buf;
+      alertBufferLoading = null;
+      return buf;
+    })
+    .catch(() => {
+      alertBufferLoading = null;
+      return null;
+    });
+  return alertBufferLoading;
+}
+
 async function unlockAudio({ preview = false } = {}) {
   const ctx = ensureAudio();
   if (!ctx) return false;
@@ -756,47 +788,27 @@ async function unlockAudio({ preview = false } = {}) {
   } catch {
     audioUnlocked = false;
   }
+  if (audioUnlocked) await loadAlertBuffer();
   syncAlertUi();
-  if (audioUnlocked && preview) playAlert(SYMBOLS[0] || 'BTCUSDT');
+  if (audioUnlocked && preview) playAlert();
   return audioUnlocked;
 }
 
-function playAlert(symbol) {
+function playAlert() {
   if (!alertSettings.enabled || !audioUnlocked) return;
   const ctx = ensureAudio();
   if (!ctx || ctx.state !== 'running') return;
-  const vol = Math.max(0.0001, alertSettings.volume);
-  const notes = symbol === 'XAUTUSDT' ? [698.46, 932.33] : [880, 1174.66];
-  const now = ctx.currentTime;
-  const master = ctx.createGain();
-  master.gain.value = vol;
-  const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -12;
-  comp.knee.value = 2;
-  comp.ratio.value = 8;
-  comp.attack.value = 0.002;
-  comp.release.value = 0.12;
-  master.connect(comp);
-  comp.connect(ctx.destination);
-  notes.forEach((freq, i) => {
-    const osc = ctx.createOscillator();
-    const filter = ctx.createBiquadFilter();
-    const gain = ctx.createGain();
-    osc.type = 'square';
-    osc.frequency.value = freq;
-    filter.type = 'lowpass';
-    filter.frequency.value = 2800;
-    filter.Q.value = 0.7;
-    const t0 = now + i * 0.14;
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(0.7, t0 + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.42);
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(master);
-    osc.start(t0);
-    osc.stop(t0 + 0.45);
-  });
+  if (!alertBuffer) {
+    loadAlertBuffer().then((buf) => { if (buf) playAlert(); });
+    return;
+  }
+  const src = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  src.buffer = alertBuffer;
+  gain.gain.value = Math.max(0.0001, alertSettings.volume);
+  src.connect(gain);
+  gain.connect(ctx.destination);
+  src.start();
 }
 
 function syncAlertUi() {
@@ -1161,7 +1173,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=20').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=21').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));

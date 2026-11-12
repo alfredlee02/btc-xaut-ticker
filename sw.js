@@ -1,15 +1,16 @@
-const CACHE = 'btc-xaut-quote-v20';
+const CACHE = 'btc-xaut-quote-v21';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=20',
-  './app.js?v=20',
+  './styles.css?v=21',
+  './app.js?v=21',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
   './icons/btc.svg',
   './icons/xaut.svg',
+  './sounds/alert.mp3',
 ];
 
 self.addEventListener('install', (event) => {
