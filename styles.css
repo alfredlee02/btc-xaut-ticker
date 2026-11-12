@@ -223,7 +223,7 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
 .price {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
-  font-size: clamp(42px, 12.8vw, 56px);
+  font-size: clamp(44px, 13.4vw, 58px);
   font-weight: 640;
   letter-spacing: -.05em;
   white-space: nowrap;
