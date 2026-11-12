@@ -1,17 +1,58 @@
 const SYMBOLS = ['BTCUSDT', 'XAUTUSDT'];
+const NAMES = { BTCUSDT: '比特幣', XAUTUSDT: '黃金' };
 const API = 'https://api.binance.com/api/v3/ticker/24hr?symbols=' + encodeURIComponent(JSON.stringify(SYMBOLS));
 const POLL_MS = 5000;
+const KLINE_MS = 15000;
+const KLINE_LIMIT = 180;
+const SPIKE_P = 0.97;
+const COOLDOWN_MS = 180000;
 const STORAGE_KEY = 'btc-xaut-quote-v1';
+const ALERT_KEY = 'btc-xaut-alerts-v1';
 const TZ = 'Asia/Hong_Kong';
 
 const statusEl = document.getElementById('status');
 const refreshBtn = document.getElementById('refreshBtn');
 const installBanner = document.getElementById('installBanner');
 const refreshHint = document.getElementById('refreshHint');
+const alertToggle = document.getElementById('alertToggle');
+const alertHint = document.getElementById('alertHint');
+const alertVolumeWrap = document.getElementById('alertVolumeWrap');
+const alertVolume = document.getElementById('alertVolume');
+const alertBar = document.getElementById('alertBar');
+const alertToast = document.getElementById('alertToast');
+
+const DEFAULT_HINT = '1 或 5 分鐘成交額遠高過近 3 小時水平就會出聲。要 app 開住先會响；電話靜音可能唔會响。';
+const UNLOCK_HINT = '撳呢度開啟提示聲。之後要 app 開住先會响。';
 
 const lastPrices = {};
+const lastAlertAt = {};
+const lastAlertCandle = {};
 let timer = null;
+let klineTimer = null;
 let inFlight = false;
+let klineInFlight = false;
+let audioCtx = null;
+let audioUnlocked = false;
+let toastTimer = null;
+let previewTimer = null;
+
+function loadAlertSettings() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(ALERT_KEY) || 'null');
+    return {
+      enabled: raw?.enabled !== false,
+      volume: Math.min(1, Math.max(0, Number(raw?.volume ?? 0.7))),
+    };
+  } catch {
+    return { enabled: true, volume: 0.7 };
+  }
+}
+
+function saveAlertSettings() {
+  localStorage.setItem(ALERT_KEY, JSON.stringify(alertSettings));
+}
+
+const alertSettings = loadAlertSettings();
 
 function money(n) {
   return Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,6 +62,18 @@ function signed(n) {
   const v = Number(n);
   const s = money(Math.abs(v));
   return (v > 0 ? '+' : v < 0 ? '−' : '') + s;
+}
+
+function formatQuote(n) {
+  if (n >= 1e8) {
+    const v = n / 1e8;
+    return v.toLocaleString('en-US', { maximumFractionDigits: v >= 10 ? 1 : 2 }) + ' 億 USDT';
+  }
+  if (n >= 1e4) {
+    const v = n / 1e4;
+    return v.toLocaleString('en-US', { maximumFractionDigits: v >= 100 ? 0 : 1 }) + ' 萬 USDT';
+  }
+  return money(n) + ' USDT';
 }
 
 function formatTime(ts) {
@@ -108,6 +161,7 @@ async function refresh({ manual = false } = {}) {
     const updatedAt = Date.now();
     saveCache({ tickers, updatedAt });
     applyTickers(tickers, { updatedAt });
+    if (manual) checkVolumeSpikes();
   } catch (err) {
     const cache = loadCache();
     if (cache?.tickers) {
@@ -127,12 +181,175 @@ function startPolling() {
   timer = setInterval(() => {
     if (document.visibilityState === 'visible') refresh();
   }, POLL_MS);
+  klineTimer = setInterval(() => {
+    if (document.visibilityState === 'visible' && alertSettings.enabled) checkVolumeSpikes();
+  }, KLINE_MS);
+  if (alertSettings.enabled) checkVolumeSpikes();
 }
 
 function stopPolling() {
   if (timer) {
     clearInterval(timer);
     timer = null;
+  }
+  if (klineTimer) {
+    clearInterval(klineTimer);
+    klineTimer = null;
+  }
+}
+
+function percentile(values, p) {
+  if (!values.length) return 0;
+  const s = [...values].sort((a, b) => a - b);
+  const i = (s.length - 1) * p;
+  const lo = Math.floor(i);
+  const hi = Math.ceil(i);
+  if (lo === hi) return s[lo];
+  return s[lo] + (s[hi] - s[lo]) * (i - lo);
+}
+
+async function fetchKlines(symbol) {
+  const url = 'https://api.binance.com/api/v3/klines?symbol=' + symbol + '&interval=1m&limit=' + KLINE_LIMIT;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  return rows.map((row) => ({
+    openTime: row[0],
+    quoteVolume: Number(row[7]),
+  }));
+}
+
+function detectSpike(candles) {
+  if (!candles || candles.length < 40) return null;
+  const completed = candles.slice(0, -1);
+  const current = candles[candles.length - 1];
+  const vols1 = completed.map((c) => c.quoteVolume);
+  const threshold1 = percentile(vols1, SPIKE_P);
+  const windows5 = [];
+  for (let i = 4; i < completed.length; i++) {
+    let sum = 0;
+    for (let j = i - 4; j <= i; j++) sum += completed[j].quoteVolume;
+    windows5.push(sum);
+  }
+  const threshold5 = percentile(windows5, SPIKE_P);
+  const last4 = completed.slice(-4).reduce((s, c) => s + c.quoteVolume, 0);
+  const vol5 = last4 + current.quoteVolume;
+  const justClosed = completed[completed.length - 1];
+
+  const hit1Current = current.quoteVolume >= threshold1 && threshold1 > 0;
+  const hit1Closed = justClosed.quoteVolume >= threshold1 && threshold1 > 0;
+  const hit5 = vol5 >= threshold5 && threshold5 > 0;
+
+  if (hit1Current) {
+    return { window: 1, volume: current.quoteVolume, candleOpen: current.openTime };
+  }
+  if (hit1Closed) {
+    return { window: 1, volume: justClosed.quoteVolume, candleOpen: justClosed.openTime };
+  }
+  if (hit5) {
+    return { window: 5, volume: vol5, candleOpen: current.openTime };
+  }
+  return null;
+}
+
+async function checkVolumeSpikes() {
+  if (!alertSettings.enabled || document.visibilityState !== 'visible') return;
+  if (klineInFlight) return;
+  klineInFlight = true;
+  try {
+    const sets = await Promise.all(SYMBOLS.map(fetchKlines));
+    for (let i = 0; i < SYMBOLS.length; i++) {
+      maybeAlert(SYMBOLS[i], detectSpike(sets[i]));
+    }
+  } catch (err) {
+    console.warn(err);
+  } finally {
+    klineInFlight = false;
+  }
+}
+
+function maybeAlert(symbol, spike) {
+  if (!spike) return;
+  const now = Date.now();
+  if (lastAlertCandle[symbol] === spike.candleOpen) return;
+  if (lastAlertAt[symbol] && now - lastAlertAt[symbol] < COOLDOWN_MS) return;
+
+  lastAlertAt[symbol] = now;
+  lastAlertCandle[symbol] = spike.candleOpen;
+
+  const text = NAMES[symbol] + ' ' + spike.window + ' 分鐘成交急升 · 約 ' + formatQuote(spike.volume);
+  const card = document.getElementById('card-' + symbol);
+  const spikeEl = card?.querySelector('[data-spike]');
+  if (spikeEl) {
+    spikeEl.hidden = false;
+    spikeEl.textContent = text.replace(NAMES[symbol] + ' ', '');
+  }
+  card?.classList.add('spiking');
+  setTimeout(() => card?.classList.remove('spiking'), 4000);
+
+  alertToast.hidden = false;
+  alertToast.textContent = text;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { alertToast.hidden = true; }, 8000);
+
+  playAlert(symbol);
+  try { navigator.vibrate?.(180); } catch { /* ignore */ }
+}
+
+function ensureAudio() {
+  const Ctor = window.AudioContext || window.webkitAudioContext;
+  if (!Ctor) return null;
+  if (!audioCtx) audioCtx = new Ctor();
+  return audioCtx;
+}
+
+async function unlockAudio({ preview = false } = {}) {
+  const ctx = ensureAudio();
+  if (!ctx) return false;
+  try {
+    if (ctx.state === 'suspended') await ctx.resume();
+    audioUnlocked = ctx.state === 'running';
+  } catch {
+    audioUnlocked = false;
+  }
+  syncAlertUi();
+  if (audioUnlocked && preview) playAlert('BTCUSDT');
+  return audioUnlocked;
+}
+
+function playAlert(symbol) {
+  if (!alertSettings.enabled || !audioUnlocked) return;
+  const ctx = ensureAudio();
+  if (!ctx || ctx.state !== 'running') return;
+  const vol = Math.max(0.0001, alertSettings.volume * 0.22);
+  const notes = symbol === 'XAUTUSDT' ? [698.5, 932] : [880, 1174.7];
+  const now = ctx.currentTime;
+  notes.forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const t0 = now + i * 0.16;
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(vol, t0 + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.28);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.3);
+  });
+}
+
+function syncAlertUi() {
+  alertToggle.setAttribute('aria-checked', alertSettings.enabled ? 'true' : 'false');
+  alertVolumeWrap.hidden = !alertSettings.enabled;
+  alertVolume.value = String(Math.round(alertSettings.volume * 100));
+  if (alertSettings.enabled && !audioUnlocked) {
+    alertHint.textContent = UNLOCK_HINT;
+    alertHint.classList.add('need-unlock');
+  } else {
+    alertHint.textContent = DEFAULT_HINT;
+    alertHint.classList.remove('need-unlock');
   }
 }
 
@@ -141,9 +358,32 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible') {
     refresh();
     startPolling();
+    if (alertSettings.enabled && audioUnlocked) unlockAudio();
   } else {
     stopPolling();
   }
+});
+
+alertToggle.addEventListener('click', async () => {
+  alertSettings.enabled = !alertSettings.enabled;
+  saveAlertSettings();
+  if (alertSettings.enabled) {
+    await unlockAudio({ preview: true });
+    checkVolumeSpikes();
+  }
+  syncAlertUi();
+});
+
+alertBar.addEventListener('click', (e) => {
+  if (e.target === alertToggle || e.target === alertVolume) return;
+  if (alertSettings.enabled && !audioUnlocked) unlockAudio({ preview: true });
+});
+
+alertVolume.addEventListener('input', () => {
+  alertSettings.volume = Number(alertVolume.value) / 100;
+  saveAlertSettings();
+  clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => unlockAudio({ preview: true }), 180);
 });
 
 // Pull to refresh
@@ -190,6 +430,7 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js').catch(() => {});
 }
 
+syncAlertUi();
 const cache = loadCache();
 if (cache?.tickers) applyTickers(cache.tickers, { fromCache: !navigator.onLine, updatedAt: cache.updatedAt });
 refresh();

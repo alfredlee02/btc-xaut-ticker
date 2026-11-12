@@ -18,6 +18,7 @@
 </head>
 <body>
   <div class="refresh-hint" id="refreshHint" hidden>釋放以更新</div>
+  <div class="toast" id="alertToast" hidden role="status" aria-live="assertive"></div>
   <div class="app">
     <header class="top">
       <div>
@@ -52,6 +53,7 @@
           </div>
           <div class="range-track"><i data-range-pos></i></div>
         </div>
+        <p class="spike" data-spike hidden></p>
       </article>
 
       <article class="card" id="card-XAUTUSDT" data-symbol="XAUTUSDT">
@@ -74,8 +76,23 @@
           </div>
           <div class="range-track"><i data-range-pos></i></div>
         </div>
+        <p class="spike" data-spike hidden></p>
       </article>
     </main>
+
+    <section class="alert-bar" id="alertBar">
+      <div class="alert-row">
+        <div>
+          <h3>成交提示</h3>
+          <p class="alert-hint" id="alertHint">1 或 5 分鐘成交額遠高過近 3 小時水平就會出聲。要 app 開住先會响；電話靜音可能唔會响。</p>
+        </div>
+        <button class="switch" id="alertToggle" type="button" role="switch" aria-checked="false" aria-label="成交提示"></button>
+      </div>
+      <div class="alert-volume" id="alertVolumeWrap" hidden>
+        <label for="alertVolume">音量</label>
+        <input id="alertVolume" type="range" min="0" max="100" value="70" step="1">
+      </div>
+    </section>
 
     <p class="footnote">價格來自 Binance 公開行情，僅供參考，唔構成任何投資建議。</p>
 

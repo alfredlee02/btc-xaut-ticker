@@ -228,5 +228,111 @@ h2 { font-size: 16px; font-weight: 600; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .icon-btn.spin svg, .price.flash-up, .price.flash-down { animation: none; transition: none; }
+  .icon-btn.spin svg, .price.flash-up, .price.flash-down, .switch::after { animation: none; transition: none; }
+}
+
+.spike {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #f0c36a;
+}
+
+.card.spiking {
+  box-shadow: 0 0 0 1px rgba(240,195,106,.45), var(--shadow);
+}
+
+.toast {
+  position: fixed;
+  top: calc(12px + var(--safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  max-width: min(390px, calc(100% - 32px));
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #1c1d22;
+  border: 1px solid rgba(240,195,106,.35);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.alert-bar {
+  margin-top: 16px;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255,255,255,.03);
+}
+
+.alert-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.alert-bar h3 {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.alert-hint {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.alert-hint.need-unlock {
+  color: #f0c36a;
+}
+
+.switch {
+  width: 48px;
+  height: 28px;
+  border: 0;
+  border-radius: 99px;
+  background: rgba(255,255,255,.16);
+  position: relative;
+  flex: none;
+  cursor: pointer;
+  margin-top: 2px;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform .2s ease;
+}
+
+.switch[aria-checked="true"] { background: var(--up); }
+.switch[aria-checked="true"]::after { transform: translateX(20px); }
+
+.alert-volume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.alert-volume input[type="range"] {
+  flex: 1;
+  accent-color: var(--btc);
+  height: 24px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch::after { transition: none; }
 }
