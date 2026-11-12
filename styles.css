@@ -36,24 +36,29 @@ body {
 .app {
   max-width: 430px;
   margin: 0 auto;
-  padding: calc(20px + var(--safe-top)) 20px calc(28px + var(--safe-bot));
+  padding: calc(12px + var(--safe-top)) 20px calc(28px + var(--safe-bot));
 }
 
 .top {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: 22px;
+  gap: 12px;
+  margin-bottom: 14px;
 }
 
-h1 {
-  font-size: 28px;
-  font-weight: 650;
-  letter-spacing: .02em;
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 .status {
-  margin-top: 4px;
+  margin: 0;
+  flex: 1;
   color: var(--muted);
   font-size: 13px;
 }
