@@ -3,7 +3,7 @@ const PAIRS_KEY = 'btc-xaut-pairs-v1';
 const TOP_N = 20;
 const UNIVERSE_MS = 12 * 60 * 1000;
 const TICKER_URL = 'https://api.binance.com/api/v3/ticker/24hr';
-const POLL_MS = 5000;
+const POLL_MS = 3000;
 const KLINE_MS = 15000;
 const KLINE_LIMIT = 250;
 const SPIKE_P = 0.97;
@@ -1341,7 +1341,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=23').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=24').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));
