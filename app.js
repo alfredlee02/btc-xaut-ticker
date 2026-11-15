@@ -112,7 +112,7 @@ let wakeLock = null;
 let pickerSlot = 0;
 let pickerReturnFocus = null;
 let universeInFlight = false;
-const weekCache = {};
+const hourCache = {};
 const sparkCache = {};
 const universeCache = { at: 0, list: [], bySymbol: {}, error: false };
 
@@ -223,6 +223,8 @@ function resetCardVisuals(card) {
     svg.replaceChildren();
     svg.setAttribute('class', 'spark');
   }
+  const levelsEl = card.querySelector('[data-levels]');
+  if (levelsEl) levelsEl.replaceChildren();
 }
 
 function applyPairs(next) {
@@ -240,6 +242,10 @@ function applyPairs(next) {
       delete lastPrices[s];
       delete lastAlertAt[s];
       delete lastAlertCandle[s];
+      delete sparkState[s];
+      delete hourState[s];
+      delete sparkCache[s];
+      delete hourCache[s];
     }
   }
   extrasGen += 1;
@@ -570,29 +576,37 @@ function applyHourChanges(symbol, candles) {
   applyTrailingChange(symbol, '4h', candles, 4 * 60 * 60 * 1000, 241);
 }
 
-async function fetchWeekChange(symbol) {
-  const cached = weekCache[symbol];
-  if (cached && Date.now() - cached.at < WEEK_TTL) return cached.pct;
+async function fetchHourly(symbol) {
+  const cached = hourCache[symbol];
+  if (cached && Date.now() - cached.at < WEEK_TTL) return cached;
   const url = 'https://api.binance.com/api/v3/klines?symbol=' + symbol + '&interval=1h&limit=169';
   const res = await fetch(url, { cache: 'no-store' });
   if (!res.ok) throw new Error('HTTP ' + res.status);
-  const rows = await res.json();
-  const last = Number(rows[rows.length - 1][4]);
+  const candles = parseHourCandles(await res.json());
+  if (!candles.length) throw new Error('empty klines');
+  const last = candles[candles.length - 1];
   const target = Date.now() - WEEK_MS;
-  let ago = rows[0];
-  for (const row of rows) {
-    if (row[0] <= target) ago = row;
+  let ago = candles[0];
+  for (const c of candles) {
+    if (c.openTime <= target) ago = c;
     else break;
   }
-  const pct = changePct(last, Number(ago[4]));
-  weekCache[symbol] = { pct, at: Date.now() };
-  return pct;
+  const entry = { pct: changePct(last.close, ago.close), candles, at: Date.now() };
+  hourCache[symbol] = entry;
+  return entry;
 }
 
 async function refreshWeekChanges(symbols) {
-  const results = await Promise.allSettled(symbols.map(fetchWeekChange));
+  const results = await Promise.allSettled(symbols.map(fetchHourly));
   symbols.forEach((symbol, i) => {
-    if (results[i].status === 'fulfilled') applyPeriod(symbol, '7d', results[i].value);
+    if (results[i].status !== 'fulfilled') {
+      console.warn(results[i].reason);
+      return;
+    }
+    const { pct, candles } = results[i].value;
+    applyPeriod(symbol, '7d', pct);
+    hourState[symbol] = candles;
+    paintSpark(symbol);
   });
 }
 
@@ -600,32 +614,266 @@ const SPARK_W = 240;
 const SPARK_H = 100;
 const SPARK_PAD_Y = 10;
 const SVG_NS = 'http://www.w3.org/2000/svg';
+const SWING_BARS = 2;
+const CLUSTER_PCT = 0.002;
+const FVG_MIN_PCT = 0.0008;
+const MAX_FVG = 2;
+const MAX_RES = 2;
+const MAX_SUP = 2;
+const sparkState = {};
+const hourState = {};
 
-async function fetchSparkline(symbol) {
-  const cached = sparkCache[symbol];
-  if (cached && Date.now() - cached.at < SPARK_TTL) return cached.closes;
-  const url = 'https://api.binance.com/api/v3/klines?symbol=' + symbol + '&interval=15m&limit=97';
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const rows = await res.json();
-  const closes = rows.map((row) => Number(row[4])).filter((n) => Number.isFinite(n));
-  sparkCache[symbol] = { closes, at: Date.now() };
-  return closes;
+function parseHourCandles(rows) {
+  return rows.map((row) => ({
+    openTime: row[0],
+    open: Number(row[1]),
+    high: Number(row[2]),
+    low: Number(row[3]),
+    close: Number(row[4]),
+  })).filter((c) => Number.isFinite(c.high) && Number.isFinite(c.low) && Number.isFinite(c.close));
 }
 
-function sparkCoords(closes) {
-  if (!closes || closes.length < 2) return null;
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
-  const span = max - min;
-  const last = closes.length - 1;
-  return closes.map((c, i) => {
-    const x = (i / last) * SPARK_W;
-    const y = span === 0
-      ? SPARK_H / 2
-      : SPARK_PAD_Y + (1 - (c - min) / span) * (SPARK_H - SPARK_PAD_Y * 2);
-    return [x, y];
+function clusterSwings(levels, mode) {
+  if (!levels.length) return [];
+  const sorted = levels.slice().sort((a, b) => a.price - b.price);
+  const groups = [];
+  let group = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const lo = Math.min(...group.map((x) => x.price), sorted[i].price);
+    const hi = Math.max(...group.map((x) => x.price), sorted[i].price);
+    const mid = (lo + hi) / 2;
+    if (mid > 0 && (hi - lo) / mid <= CLUSTER_PCT) group.push(sorted[i]);
+    else {
+      groups.push(group);
+      group = [sorted[i]];
+    }
+  }
+  groups.push(group);
+  return groups.map((g) => {
+    let pick = g[0];
+    for (const x of g) {
+      if (mode === 'high' && x.price >= pick.price) pick = x;
+      if (mode === 'low' && x.price <= pick.price) pick = x;
+    }
+    return pick;
   });
+}
+
+function swingPoints(completed) {
+  const highs = [];
+  const lows = [];
+  const L = SWING_BARS;
+  for (let i = L; i < completed.length - L; i++) {
+    const high = completed[i].high;
+    const low = completed[i].low;
+    let isHigh = true;
+    let isLow = true;
+    for (let k = i - L; k <= i + L; k++) {
+      if (k === i) continue;
+      if (completed[k].high >= high) isHigh = false;
+      if (completed[k].low <= low) isLow = false;
+    }
+    if (isHigh) highs.push({ price: high, time: completed[i].openTime });
+    if (isLow) lows.push({ price: low, time: completed[i].openTime });
+  }
+  return clusterSwings(highs, 'high').concat(clusterSwings(lows, 'low'));
+}
+
+function fvgFilled(f, candles) {
+  for (const c of candles) {
+    if (c.openTime <= f.start) continue;
+    if (f.kind === 'bull' && c.low <= f.bot) return true;
+    if (f.kind === 'bear' && c.high >= f.top) return true;
+  }
+  return false;
+}
+
+function findFvgs(candles) {
+  const completed = candles.slice(0, -1);
+  const out = [];
+  for (let i = 2; i < completed.length; i++) {
+    const c1 = completed[i - 2];
+    const c3 = completed[i];
+    if (c1.high < c3.low) {
+      const bot = c1.high;
+      const top = c3.low;
+      const mid = (top + bot) / 2;
+      if (mid > 0 && (top - bot) / mid >= FVG_MIN_PCT) {
+        out.push({ kind: 'bull', top, bot, start: c3.openTime });
+      }
+    }
+    if (c1.low > c3.high) {
+      const bot = c3.high;
+      const top = c1.low;
+      const mid = (top + bot) / 2;
+      if (mid > 0 && (top - bot) / mid >= FVG_MIN_PCT) {
+        out.push({ kind: 'bear', top, bot, start: c3.openTime });
+      }
+    }
+  }
+  return out.filter((f) => !fvgFilled(f, candles));
+}
+
+function fvgDistance(f, price) {
+  if (price >= f.bot && price <= f.top) return 0;
+  if (price < f.bot) return f.bot - price;
+  return price - f.top;
+}
+
+function structureLevels(candles, price) {
+  if (!candles || candles.length < SWING_BARS * 2 + 3 || !(price > 0)) {
+    return { sr: [], fvg: [] };
+  }
+  const swings = swingPoints(candles.slice(0, -1));
+  const res = swings.filter((l) => l.price > price).sort((a, b) => a.price - b.price).slice(0, MAX_RES);
+  const sup = swings.filter((l) => l.price < price).sort((a, b) => b.price - a.price).slice(0, MAX_SUP);
+  const sr = res.map((l) => ({ price: l.price, side: 'res' }))
+    .concat(sup.map((l) => ({ price: l.price, side: 'sup' })));
+  const fvg = findFvgs(candles)
+    .slice()
+    .sort((a, b) => fvgDistance(a, price) - fvgDistance(b, price))
+    .slice(0, MAX_FVG);
+  return { sr, fvg };
+}
+
+function visiblePriceRange(closes, sr, fvg) {
+  let min = Math.min(...closes);
+  let max = Math.max(...closes);
+  const span = Math.max(max - min, Math.abs(min) * 1e-6, 1e-8);
+  const lo = min - span * 0.08;
+  const hi = max + span * 0.08;
+  for (const l of sr) {
+    if (l.price >= lo && l.price <= hi) {
+      if (l.price < min) min = l.price;
+      if (l.price > max) max = l.price;
+    }
+  }
+  for (const f of fvg) {
+    for (const p of [f.bot, f.top]) {
+      if (p >= lo && p <= hi) {
+        if (p < min) min = p;
+        if (p > max) max = p;
+      }
+    }
+  }
+  return { min, max };
+}
+
+function priceY(price, min, max) {
+  const span = max - min;
+  return span === 0
+    ? SPARK_H / 2
+    : SPARK_PAD_Y + (1 - (price - min) / span) * (SPARK_H - SPARK_PAD_Y * 2);
+}
+
+function timeX(time, times) {
+  if (!times || times.length < 2) return 0;
+  const t0 = times[0];
+  const t1 = times[times.length - 1];
+  if (t1 <= t0) return 0;
+  if (time <= t0) return 0;
+  if (time >= t1) return SPARK_W;
+  return ((time - t0) / (t1 - t0)) * SPARK_W;
+}
+
+function svgEl(name, attrs) {
+  const el = document.createElementNS(SVG_NS, name);
+  for (const key of Object.keys(attrs)) el.setAttribute(key, attrs[key]);
+  return el;
+}
+
+function nudgeTags(placed) {
+  const gap = 7;
+  const lo = 4;
+  const hi = SPARK_H - 4;
+  placed.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < placed.length; i++) {
+    if (placed[i].y - placed[i - 1].y < gap) placed[i].y = placed[i - 1].y + gap;
+  }
+  for (let i = placed.length - 1; i >= 0; i--) {
+    if (placed[i].y > hi) placed[i].y = hi;
+    if (i < placed.length - 1 && placed[i + 1].y - placed[i].y < gap) {
+      placed[i].y = placed[i + 1].y - gap;
+    }
+  }
+  if (placed.length && placed[0].y < lo) {
+    placed[0].y = lo;
+    for (let i = 1; i < placed.length; i++) {
+      if (placed[i].y - placed[i - 1].y < gap) placed[i].y = placed[i - 1].y + gap;
+    }
+  }
+  return placed;
+}
+
+function paintSpark(symbol) {
+  const card = cardFor(symbol);
+  const svg = card?.querySelector('[data-spark]');
+  const tags = card?.querySelector('[data-levels]');
+  if (!svg) return;
+  svg.replaceChildren();
+  if (tags) tags.replaceChildren();
+  const spark = sparkState[symbol];
+  if (!spark || spark.closes.length < 2) {
+    svg.setAttribute('class', 'spark');
+    return;
+  }
+  const closes = spark.closes;
+  const times = spark.times;
+  const last = closes[closes.length - 1];
+  const { sr, fvg } = structureLevels(hourState[symbol], last);
+  const { min, max } = visiblePriceRange(closes, sr, fvg);
+  const srVis = sr.filter((l) => l.price >= min && l.price <= max);
+  const fvgVis = fvg.filter((f) => f.top >= min && f.bot <= max);
+
+  const first = closes[0];
+  const dir = last > first ? 'up' : last < first ? 'down' : '';
+  svg.setAttribute('class', 'spark' + (dir ? ' ' + dir : ''));
+  svg.setAttribute('viewBox', '0 0 ' + SPARK_W + ' ' + SPARK_H);
+  svg.setAttribute('preserveAspectRatio', 'none');
+
+  const lastI = closes.length - 1;
+  const points = closes.map((c, i) => [ (i / lastI) * SPARK_W, priceY(c, min, max) ]);
+  const lineD = smoothLine(points);
+  const end = points[points.length - 1];
+  const fillD = lineD + ' L' + end[0].toFixed(2) + ' ' + SPARK_H + ' L0 ' + SPARK_H + ' Z';
+
+  for (const f of fvgVis) {
+    const x = timeX(f.start, times);
+    const y = priceY(f.top, min, max);
+    const h = Math.max(0.8, priceY(f.bot, min, max) - y);
+    svg.append(svgEl('rect', {
+      class: 'spark-fvg ' + f.kind,
+      x: x.toFixed(2),
+      y: y.toFixed(2),
+      width: (SPARK_W - x).toFixed(2),
+      height: h.toFixed(2),
+    }));
+  }
+
+  svg.append(
+    svgEl('path', { class: 'spark-fill', d: fillD }),
+    svgEl('path', { class: 'spark-line', d: lineD }),
+  );
+
+  for (const l of srVis) {
+    const y = priceY(l.price, min, max);
+    svg.append(svgEl('line', {
+      class: 'spark-sr ' + l.side,
+      x1: '0',
+      x2: String(SPARK_W),
+      y1: y.toFixed(2),
+      y2: y.toFixed(2),
+    }));
+  }
+
+  if (!tags || !srVis.length) return;
+  for (const l of nudgeTags(srVis.map((l) => ({ price: l.price, side: l.side, y: priceY(l.price, min, max) })))) {
+    const tag = document.createElement('span');
+    tag.className = 'level-tag ' + l.side;
+    tag.textContent = moneyPrice(l.price);
+    tag.style.top = ((l.y / SPARK_H) * 100).toFixed(2) + '%';
+    tags.append(tag);
+  }
 }
 
 function fmtPt(p) {
@@ -650,33 +898,29 @@ function smoothLine(points) {
   return d;
 }
 
-function applySparkline(symbol, closes) {
-  const svg = cardFor(symbol)?.querySelector('[data-spark]');
-  if (!svg) return;
-  svg.replaceChildren();
-  const points = sparkCoords(closes);
-  if (!points) {
-    svg.setAttribute('class', 'spark');
-    return;
+async function fetchSparkline(symbol) {
+  const cached = sparkCache[symbol];
+  if (cached && Date.now() - cached.at < SPARK_TTL) return cached;
+  const url = 'https://api.binance.com/api/v3/klines?symbol=' + symbol + '&interval=15m&limit=97';
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const rows = await res.json();
+  const closes = [];
+  const times = [];
+  for (const row of rows) {
+    const close = Number(row[4]);
+    if (!Number.isFinite(close)) continue;
+    closes.push(close);
+    times.push(row[0]);
   }
-  const first = closes[0];
-  const last = closes[closes.length - 1];
-  const dir = last > first ? 'up' : last < first ? 'down' : '';
-  svg.setAttribute('class', 'spark' + (dir ? ' ' + dir : ''));
-  svg.setAttribute('viewBox', '0 0 ' + SPARK_W + ' ' + SPARK_H);
-  svg.setAttribute('preserveAspectRatio', 'none');
+  const entry = { closes, times, at: Date.now() };
+  sparkCache[symbol] = entry;
+  return entry;
+}
 
-  const lineD = smoothLine(points);
-  const end = points[points.length - 1];
-  const fillD = lineD + ' L' + end[0].toFixed(2) + ' ' + SPARK_H + ' L0 ' + SPARK_H + ' Z';
-
-  const fill = document.createElementNS(SVG_NS, 'path');
-  fill.setAttribute('class', 'spark-fill');
-  fill.setAttribute('d', fillD);
-  const line = document.createElementNS(SVG_NS, 'path');
-  line.setAttribute('class', 'spark-line');
-  line.setAttribute('d', lineD);
-  svg.append(fill, line);
+function applySparkline(symbol, data) {
+  sparkState[symbol] = data;
+  paintSpark(symbol);
 }
 
 async function refreshSparklines(symbols) {
@@ -1341,7 +1585,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=24').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=25').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));

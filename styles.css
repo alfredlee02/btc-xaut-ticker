@@ -140,9 +140,61 @@ h1 {
   opacity: .08;
 }
 
+.spark-fvg {
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.spark-fvg.bull {
+  fill: var(--up);
+  stroke: var(--up);
+  fill-opacity: .28;
+  stroke-opacity: .5;
+}
+.spark-fvg.bear {
+  fill: var(--down);
+  stroke: var(--down);
+  fill-opacity: .28;
+  stroke-opacity: .5;
+}
+
+.spark-sr {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  opacity: .55;
+}
+.spark-sr.sup { stroke: var(--up); }
+.spark-sr.res { stroke: var(--down); }
+
+.levels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.level-tag {
+  position: absolute;
+  right: 10px;
+  transform: translateY(-50%);
+  font-size: 9px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  line-height: 1.25;
+  white-space: nowrap;
+  background: rgba(11, 12, 15, .62);
+}
+.level-tag.sup { color: var(--up); }
+.level-tag.res { color: var(--down); }
+
 .card-body {
   position: relative;
-  z-index: 1;
+  z-index: 2;
 }
 
 .card-head {

@@ -14,7 +14,7 @@
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>BTC · XAUT 行情</title>
-  <link rel="stylesheet" href="styles.css?v=24">
+  <link rel="stylesheet" href="styles.css?v=25">
 </head>
 <body>
   <div class="refresh-hint" id="refreshHint" hidden>釋放以更新</div>
@@ -35,6 +35,7 @@
     <main class="cards">
       <article class="card" id="card-0" data-slot="0" data-symbol="BTCUSDT">
         <svg class="spark" data-spark viewBox="0 0 240 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="levels" data-levels aria-hidden="true"></div>
         <div class="card-body">
           <button class="card-head" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="揀幣種，而家係比特幣">
             <span class="logo-slot" data-logo>
@@ -73,6 +74,7 @@
 
       <article class="card" id="card-1" data-slot="1" data-symbol="XAUTUSDT">
         <svg class="spark" data-spark viewBox="0 0 240 100" preserveAspectRatio="none" aria-hidden="true"></svg>
+        <div class="levels" data-levels aria-hidden="true"></div>
         <div class="card-body">
           <button class="card-head" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="揀幣種，而家係黃金">
             <span class="logo-slot" data-logo>
@@ -159,6 +161,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=24"></script>
+  <script src="app.js?v=25"></script>
 </body>
 </html>
