@@ -1585,7 +1585,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=25').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=26').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));

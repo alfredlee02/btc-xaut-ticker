@@ -147,14 +147,14 @@ h1 {
 .spark-fvg.bull {
   fill: var(--up);
   stroke: var(--up);
-  fill-opacity: .28;
-  stroke-opacity: .5;
+  fill-opacity: .14;
+  stroke-opacity: .25;
 }
 .spark-fvg.bear {
   fill: var(--down);
   stroke: var(--down);
-  fill-opacity: .28;
-  stroke-opacity: .5;
+  fill-opacity: .14;
+  stroke-opacity: .25;
 }
 
 .spark-sr {
