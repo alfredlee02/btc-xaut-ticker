@@ -463,6 +463,11 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
   color: var(--muted);
 }
 
+/* Input row only — do not use bare .cost, which also marks the sparkline and chart tag. */
+.card-body > .cost {
+  opacity: .5;
+}
+
 .cost label {
   flex: none;
 }
