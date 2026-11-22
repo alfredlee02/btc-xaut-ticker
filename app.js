@@ -1724,7 +1724,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=31').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=32').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => {
