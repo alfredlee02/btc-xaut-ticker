@@ -1,9 +1,9 @@
-const CACHE = 'btc-xaut-quote-v32';
+const CACHE = 'btc-xaut-quote-v33';
 const ASSETS = [
   './',
   './index.html',
-  './styles.css?v=32',
-  './app.js?v=32',
+  './styles.css?v=33',
+  './app.js?v=33',
   './manifest.webmanifest',
   './icons/icon-192.png',
   './icons/icon-512.png',

@@ -107,7 +107,7 @@ h1 {
   background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,.02));
   border: 1px solid var(--line);
   border-radius: 22px;
-  padding: 22px 20px 18px;
+  padding: 26px 20px 22px;
   box-shadow: var(--shadow);
   backdrop-filter: blur(8px);
 }
@@ -295,7 +295,7 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
 .price {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum" 1;
-  font-size: clamp(44px, 13.4vw, 58px);
+  font-size: clamp(46px, 14vw, 60px);
   font-weight: 640;
   letter-spacing: -.05em;
   white-space: nowrap;
@@ -310,7 +310,7 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
 .price.flash-up, .price.flash-down { transition: color .15s ease; }
 
 .price.price-long {
-  font-size: clamp(32px, 9.6vw, 46px);
+  font-size: clamp(34px, 10.2vw, 48px);
   letter-spacing: -.04em;
 }
 
