@@ -10,6 +10,7 @@ const SPIKE_P = 0.97;
 const COOLDOWN_MS = 180000;
 const STORAGE_KEY = 'btc-xaut-quote-v1';
 const ALERT_KEY = 'btc-xaut-alerts-v1';
+const COST_KEY = 'btc-xaut-cost-v1';
 const WAKE_KEY = 'btc-xaut-wakelock-v1';
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const WEEK_TTL = 60000;
@@ -83,13 +84,15 @@ const WAKE_UNAVAILABLE = '呢部裝置暫時唔支援螢幕常亮。';
 const WAKE_FAILED = '而家未能保持常亮，可能係系統限制。請保持 app 開住再試。';
 const wakeSupported = typeof navigator !== 'undefined' && 'wakeLock' in navigator;
 
-const DEFAULT_HINT = '1 或 5 分鐘成交額遠高過近 3 小時水平就會出聲。要 app 開住先會响；電話靜音可能唔會响。';
+const DEFAULT_HINT = '成交急升，或者現價穿過你設定嘅均價，就會出提示。要 app 開住先會响；電話靜音可能唔會响。';
 const UNLOCK_HINT = '撳呢度開啟提示聲。之後要 app 開住先會响。';
 const PICKER_SUB = 'Binance USDT 成交額頭 20，名單會跟成交量更新。';
 
 const lastPrices = {};
 const lastAlertAt = {};
 const lastAlertCandle = {};
+const lastCostSide = {};
+const lastCostAlertAt = {};
 let timer = null;
 let klineTimer = null;
 let universeTimer = null;
@@ -236,12 +239,15 @@ function applyPairs(next) {
     const changed = prev[i] !== SYMBOLS[i];
     paintCardIdentity(card, SYMBOLS[i]);
     if (changed) resetCardVisuals(card);
+    paintCostRow(card, SYMBOLS[i]);
   }
   for (const s of prev) {
     if (!SYMBOLS.includes(s)) {
       delete lastPrices[s];
       delete lastAlertAt[s];
       delete lastAlertCandle[s];
+      delete lastCostSide[s];
+      delete lastCostAlertAt[s];
       delete sparkState[s];
       delete hourState[s];
       delete sparkCache[s];
@@ -393,6 +399,7 @@ function applyTickers(tickers, { fromCache = false, updatedAt } = {}) {
       setTimeout(() => priceEl.classList.remove('flash-up', 'flash-down'), 700);
     }
     lastPrices[t.symbol] = price;
+    maybeCostCross(t.symbol, price, fromCache);
 
     const changeBox = card.querySelector('[data-change]');
     const dir = pct > 0 ? 'up' : pct < 0 ? 'down' : '';
@@ -736,24 +743,20 @@ function structureLevels(candles, price) {
   return { sr, fvg };
 }
 
-function visiblePriceRange(closes, sr, fvg) {
+function visiblePriceRange(closes, sr, fvg, extra) {
   let min = Math.min(...closes);
   let max = Math.max(...closes);
   const span = Math.max(max - min, Math.abs(min) * 1e-6, 1e-8);
   const lo = min - span * 0.08;
   const hi = max + span * 0.08;
-  for (const l of sr) {
-    if (l.price >= lo && l.price <= hi) {
-      if (l.price < min) min = l.price;
-      if (l.price > max) max = l.price;
-    }
-  }
-  for (const f of fvg) {
-    for (const p of [f.bot, f.top]) {
-      if (p >= lo && p <= hi) {
-        if (p < min) min = p;
-        if (p > max) max = p;
-      }
+  const extras = (extra || []).concat(
+    sr.map((l) => l.price),
+    fvg.flatMap((f) => [f.bot, f.top]),
+  );
+  for (const p of extras) {
+    if (p >= lo && p <= hi) {
+      if (p < min) min = p;
+      if (p > max) max = p;
     }
   }
   return { min, max };
@@ -821,9 +824,11 @@ function paintSpark(symbol) {
   const times = spark.times;
   const last = closes[closes.length - 1];
   const { sr, fvg } = structureLevels(hourState[symbol], last);
-  const { min, max } = visiblePriceRange(closes, sr, fvg);
+  const cost = getCost(symbol);
+  const { min, max } = visiblePriceRange(closes, sr, fvg, cost ? [cost] : []);
   const srVis = sr.filter((l) => l.price >= min && l.price <= max);
   const fvgVis = fvg.filter((f) => f.top >= min && f.bot <= max);
+  const costVis = cost != null && cost >= min && cost <= max;
 
   const first = closes[0];
   const dir = last > first ? 'up' : last < first ? 'down' : '';
@@ -866,8 +871,22 @@ function paintSpark(symbol) {
     }));
   }
 
-  if (!tags || !srVis.length) return;
-  for (const l of nudgeTags(srVis.map((l) => ({ price: l.price, side: l.side, y: priceY(l.price, min, max) })))) {
+  if (costVis) {
+    const y = priceY(cost, min, max);
+    svg.append(svgEl('line', {
+      class: 'spark-sr cost',
+      x1: '0',
+      x2: String(SPARK_W),
+      y1: y.toFixed(2),
+      y2: y.toFixed(2),
+    }));
+  }
+
+  if (!tags) return;
+  const tagItems = srVis.map((l) => ({ price: l.price, side: l.side, y: priceY(l.price, min, max) }));
+  if (costVis) tagItems.push({ price: cost, side: 'cost', y: priceY(cost, min, max) });
+  if (!tagItems.length) return;
+  for (const l of nudgeTags(tagItems)) {
     const tag = document.createElement('span');
     tag.className = 'level-tag ' + l.side;
     tag.textContent = moneyPrice(l.price);
@@ -959,6 +978,98 @@ async function refreshMarketExtras() {
   } finally {
     if (gen === extrasGen) klineInFlight = false;
   }
+}
+
+function loadCostBasis() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(COST_KEY) || '{}');
+    const out = {};
+    if (!raw || typeof raw !== 'object') return out;
+    for (const key of Object.keys(raw)) {
+      const n = Number(raw[key]);
+      if (PAIR_RE.test(key) && n > 0 && Number.isFinite(n)) out[key] = n;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function saveCostBasis() {
+  localStorage.setItem(COST_KEY, JSON.stringify(costBasis));
+}
+
+const costBasis = loadCostBasis();
+
+function getCost(symbol) {
+  const n = costBasis[symbol];
+  return n > 0 ? n : null;
+}
+
+function parseCostInput(raw) {
+  const n = Number(String(raw).replace(/,/g, '').trim());
+  return n > 0 && Number.isFinite(n) ? n : null;
+}
+
+function paintCostRow(card, symbol) {
+  const input = card?.querySelector('[data-cost-input]');
+  const clear = card?.querySelector('[data-cost-clear]');
+  if (!input) return;
+  if (document.activeElement === input) return;
+  const cost = getCost(symbol);
+  input.value = cost ? moneyPrice(cost) : '';
+  if (clear) clear.hidden = !cost;
+}
+
+function commitCost(card) {
+  const symbol = card?.dataset.symbol;
+  const input = card?.querySelector('[data-cost-input]');
+  if (!symbol || !input) return;
+  const raw = input.value.trim();
+  if (!raw) delete costBasis[symbol];
+  else {
+    const n = parseCostInput(raw);
+    if (!n) {
+      paintCostRow(card, symbol);
+      return;
+    }
+    costBasis[symbol] = n;
+  }
+  saveCostBasis();
+  delete lastCostSide[symbol];
+  paintCostRow(card, symbol);
+  paintSpark(symbol);
+}
+
+function maybeCostCross(symbol, price, fromCache) {
+  const cost = getCost(symbol);
+  if (!(cost > 0) || !(price > 0)) {
+    delete lastCostSide[symbol];
+    return;
+  }
+  const side = price >= cost ? 'above' : 'below';
+  const prev = lastCostSide[symbol];
+  lastCostSide[symbol] = side;
+  if (fromCache || prev == null || prev === side) return;
+  if (!SYMBOLS.includes(symbol) || document.visibilityState !== 'visible') return;
+  const now = Date.now();
+  if (lastCostAlertAt[symbol] && now - lastCostAlertAt[symbol] < COOLDOWN_MS) return;
+  lastCostAlertAt[symbol] = now;
+
+  const name = displayName(symbol);
+  const dir = side === 'above' ? '向上穿過' : '向下穿過';
+  const text = name + ' 現價已' + dir + '均價 ' + moneyPrice(cost);
+  const card = cardFor(symbol);
+  card?.classList.add('cost-cross');
+  setTimeout(() => card?.classList.remove('cost-cross'), 4000);
+
+  alertToast.hidden = false;
+  alertToast.textContent = text;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { alertToast.hidden = true; }, 8000);
+
+  if (alertSettings.enabled) playAlert(symbol);
+  try { navigator.vibrate?.(180); } catch { /* ignore */ }
 }
 
 function maybeAlert(symbol, spike) {
@@ -1463,6 +1574,34 @@ document.querySelectorAll('.card-head').forEach((head) => {
   });
 });
 
+document.querySelectorAll('[data-cost-input]').forEach((input) => {
+  input.addEventListener('focus', () => {
+    const symbol = input.closest('.card')?.dataset.symbol;
+    const cost = symbol ? getCost(symbol) : null;
+    input.value = cost != null ? String(cost) : '';
+  });
+  input.addEventListener('blur', () => {
+    const card = input.closest('.card');
+    if (card) commitCost(card);
+  });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      input.blur();
+    }
+  });
+});
+
+document.querySelectorAll('[data-cost-clear]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const card = btn.closest('.card');
+    const input = card?.querySelector('[data-cost-input]');
+    if (!card || !input) return;
+    input.value = '';
+    commitCost(card);
+  });
+});
+
 pickerEl.addEventListener('click', (e) => {
   if (e.target.closest('[data-picker-close]')) closePicker();
 });
@@ -1585,10 +1724,13 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=30').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=31').catch(() => {});
 }
 
-SYMBOLS.forEach((symbol, i) => paintCardIdentity(cardAt(i), symbol));
+SYMBOLS.forEach((symbol, i) => {
+  paintCardIdentity(cardAt(i), symbol);
+  paintCostRow(cardAt(i), symbol);
+});
 syncAlertUi();
 syncWakeUi();
 applyWakeLock();

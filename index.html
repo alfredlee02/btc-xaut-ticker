@@ -14,7 +14,7 @@
   <link rel="icon" href="icons/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>BTC · XAUT 行情</title>
-  <link rel="stylesheet" href="styles.css?v=30">
+  <link rel="stylesheet" href="styles.css?v=31">
 </head>
 <body>
   <div class="refresh-hint" id="refreshHint" hidden>釋放以更新</div>
@@ -68,6 +68,11 @@
             </div>
             <div class="range-track"><i data-range-pos></i></div>
           </div>
+          <div class="cost">
+            <label>均價</label>
+            <input data-cost-input type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="輸入成本價" aria-label="均價">
+            <button type="button" class="cost-clear" data-cost-clear hidden aria-label="清除均價">清除</button>
+          </div>
           <p class="spike" data-spike hidden></p>
         </div>
       </article>
@@ -107,6 +112,11 @@
             </div>
             <div class="range-track"><i data-range-pos></i></div>
           </div>
+          <div class="cost">
+            <label>均價</label>
+            <input data-cost-input type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" placeholder="輸入成本價" aria-label="均價">
+            <button type="button" class="cost-clear" data-cost-clear hidden aria-label="清除均價">清除</button>
+          </div>
           <p class="spike" data-spike hidden></p>
         </div>
       </article>
@@ -116,7 +126,7 @@
       <div class="alert-row">
         <div>
           <h3>成交提示</h3>
-          <p class="alert-hint" id="alertHint">1 或 5 分鐘成交額遠高過近 3 小時水平就會出聲。要 app 開住先會响；電話靜音可能唔會响。</p>
+          <p class="alert-hint" id="alertHint">成交急升，或者現價穿過你設定嘅均價，就會出提示。要 app 開住先會响；電話靜音可能唔會响。</p>
         </div>
         <button class="switch" id="alertToggle" type="button" role="switch" aria-checked="false" aria-label="成交提示"></button>
       </div>
@@ -161,6 +171,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=30"></script>
+  <script src="app.js?v=31"></script>
 </body>
 </html>
