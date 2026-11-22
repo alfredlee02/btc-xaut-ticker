@@ -111,6 +111,18 @@ h1 {
   backdrop-filter: blur(8px);
 }
 
+.card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: inherit;
+  background:
+    radial-gradient(130% 95% at 0% 0%, rgba(11,12,15,.82) 0%, rgba(11,12,15,.4) 38%, rgba(11,12,15,0) 68%),
+    linear-gradient(90deg, rgba(11,12,15,.5) 0%, rgba(11,12,15,.18) 30%, rgba(11,12,15,0) 58%);
+}
+
 .spark {
   position: absolute;
   inset: 0;
