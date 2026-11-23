@@ -205,11 +205,38 @@ h1 {
 .level-tag.sup { color: var(--up); }
 .level-tag.res { color: var(--down); }
 .spark-sr.cost {
-  stroke: rgba(244,241,234,.88);
-  opacity: .9;
+  stroke: rgba(244,241,234,.92);
+  stroke-width: 2;
+  opacity: .95;
+  filter: drop-shadow(0 0 1.5px #f4f1ea) drop-shadow(0 0 5px rgba(244,241,234,.55));
 }
 .level-tag.cost {
   color: #f4f1ea;
+  font-weight: 700;
+}
+
+@keyframes cost-line-flash {
+  0%, 50%, 100% {
+    filter: drop-shadow(0 0 1.5px #f4f1ea) drop-shadow(0 0 5px rgba(244,241,234,.55));
+    opacity: .95;
+  }
+  25%, 75% {
+    filter: drop-shadow(0 0 3px #f4f1ea) drop-shadow(0 0 9px rgba(244,241,234,.95)) drop-shadow(0 0 16px rgba(244,241,234,.55));
+    opacity: 1;
+  }
+}
+
+@keyframes cost-tag-flash {
+  0%, 50%, 100% { filter: none; }
+  25%, 75% { filter: drop-shadow(0 0 6px rgba(244,241,234,.8)); }
+}
+
+.card.cost-flash .spark-sr.cost {
+  animation: cost-line-flash 1.4s ease-in-out 1;
+}
+
+.card.cost-flash .level-tag.cost {
+  animation: cost-tag-flash 1.4s ease-in-out 1;
 }
 
 .card-body {
@@ -436,7 +463,8 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .icon-btn.spin svg, .price.flash-up, .price.flash-down, .switch::after { animation: none; transition: none; }
+  .icon-btn.spin svg, .price.flash-up, .price.flash-down, .switch::after,
+  .card.cost-flash .spark-sr.cost, .card.cost-flash .level-tag.cost { animation: none; transition: none; }
 }
 
 .spike {

@@ -93,6 +93,7 @@ const lastAlertAt = {};
 const lastAlertCandle = {};
 const lastCostSide = {};
 const lastCostAlertAt = {};
+const costFlashTimers = {};
 let timer = null;
 let klineTimer = null;
 let universeTimer = null;
@@ -1041,6 +1042,26 @@ function commitCost(card) {
   paintSpark(symbol);
 }
 
+
+function flashCostLine(card, symbol) {
+  if (!card) return;
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  card.classList.remove('cost-flash');
+  void card.offsetWidth;
+  card.classList.add('cost-flash');
+  clearTimeout(costFlashTimers[symbol]);
+  const onEnd = (e) => {
+    if (e.animationName !== 'cost-line-flash') return;
+    card.removeEventListener('animationend', onEnd);
+    card.classList.remove('cost-flash');
+  };
+  card.addEventListener('animationend', onEnd);
+  costFlashTimers[symbol] = setTimeout(() => {
+    card.removeEventListener('animationend', onEnd);
+    card.classList.remove('cost-flash');
+  }, 1500);
+}
+
 function maybeCostCross(symbol, price, fromCache) {
   const cost = getCost(symbol);
   if (!(cost > 0) || !(price > 0)) {
@@ -1062,6 +1083,7 @@ function maybeCostCross(symbol, price, fromCache) {
   const card = cardFor(symbol);
   card?.classList.add('cost-cross');
   setTimeout(() => card?.classList.remove('cost-cross'), 4000);
+  flashCostLine(card, symbol);
 
   alertToast.hidden = false;
   alertToast.textContent = text;
@@ -1724,7 +1746,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=35').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=36').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => {
