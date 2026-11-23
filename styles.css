@@ -204,43 +204,28 @@ h1 {
 }
 .level-tag.sup { color: var(--up); }
 .level-tag.res { color: var(--down); }
-.spark-sr.cost-outline,
-.spark-sr.cost {
-  stroke-dasharray: none;
-  opacity: 1;
-  filter: none;
-}
-.spark-sr.cost-outline {
-  stroke: #0b0c0f;
-  stroke-width: 4;
-}
 .spark-sr.cost {
   stroke: rgba(244,241,234,.96);
-  stroke-width: 2;
+  stroke-width: 1;
+  stroke-dasharray: none;
+  opacity: .85;
+  filter: none;
+  animation: cost-line-breathe 3s ease-in-out infinite;
 }
 .level-tag.cost {
   color: #f4f1ea;
   font-weight: 700;
 }
 
-.cost-dot {
-  position: absolute;
-  left: 0;
-  z-index: 1;
-  width: 6px;
-  height: 6px;
-  margin-top: -3px;
-  margin-left: -3px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 0 5px 1.5px rgba(244,241,234,.8);
-  pointer-events: none;
-  animation: cost-dot-travel 3.5s linear infinite alternate;
-}
-
-@keyframes cost-dot-travel {
-  from { left: 0%; }
-  to { left: 100%; }
+@keyframes cost-line-breathe {
+  0%, 100% {
+    opacity: .35;
+    filter: none;
+  }
+  50% {
+    opacity: 1;
+    filter: drop-shadow(0 0 2px rgba(244,241,234,.4));
+  }
 }
 
 @keyframes cost-line-flash {
@@ -492,8 +477,7 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
 
 @media (prefers-reduced-motion: reduce) {
   .icon-btn.spin svg, .price.flash-up, .price.flash-down, .switch::after,
-  .card.cost-flash .spark-sr.cost, .card.cost-flash .level-tag.cost { animation: none; transition: none; }
-  .cost-dot { display: none; animation: none; }
+  .spark-sr.cost, .card.cost-flash .spark-sr.cost, .card.cost-flash .level-tag.cost { animation: none; transition: none; }
 }
 
 .spike {
