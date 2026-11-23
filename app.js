@@ -809,6 +809,23 @@ function nudgeTags(placed) {
   return placed;
 }
 
+function syncCostDot(card, y) {
+  if (!card) return;
+  let dot = card.querySelector('.cost-dot');
+  if (y == null) {
+    if (dot) dot.remove();
+    return;
+  }
+  if (!dot) {
+    dot = document.createElement('span');
+    dot.className = 'cost-dot';
+    dot.setAttribute('aria-hidden', 'true');
+    const body = card.querySelector('.card-body');
+    card.insertBefore(dot, body || null);
+  }
+  dot.style.top = ((y / SPARK_H) * 100).toFixed(2) + '%';
+}
+
 function paintSpark(symbol) {
   const card = cardFor(symbol);
   const svg = card?.querySelector('[data-spark]');
@@ -819,6 +836,7 @@ function paintSpark(symbol) {
   const spark = sparkState[symbol];
   if (!spark || spark.closes.length < 2) {
     svg.setAttribute('class', 'spark');
+    syncCostDot(card, null);
     return;
   }
   const closes = spark.closes;
@@ -872,16 +890,27 @@ function paintSpark(symbol) {
     }));
   }
 
+  const costY = costVis ? priceY(cost, min, max) : null;
   if (costVis) {
-    const y = priceY(cost, min, max);
-    svg.append(svgEl('line', {
-      class: 'spark-sr cost',
-      x1: '0',
-      x2: String(SPARK_W),
-      y1: y.toFixed(2),
-      y2: y.toFixed(2),
-    }));
+    const y = costY.toFixed(2);
+    svg.append(
+      svgEl('line', {
+        class: 'spark-sr cost-outline',
+        x1: '0',
+        x2: String(SPARK_W),
+        y1: y,
+        y2: y,
+      }),
+      svgEl('line', {
+        class: 'spark-sr cost',
+        x1: '0',
+        x2: String(SPARK_W),
+        y1: y,
+        y2: y,
+      }),
+    );
   }
+  syncCostDot(card, costVis ? costY : null);
 
   if (!tags) return;
   const tagItems = srVis.map((l) => ({ price: l.price, side: l.side, y: priceY(l.price, min, max) }));
@@ -1746,7 +1775,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=36').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=37').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => {

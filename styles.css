@@ -204,24 +204,52 @@ h1 {
 }
 .level-tag.sup { color: var(--up); }
 .level-tag.res { color: var(--down); }
+.spark-sr.cost-outline,
 .spark-sr.cost {
-  stroke: rgba(244,241,234,.92);
+  stroke-dasharray: none;
+  opacity: 1;
+  filter: none;
+}
+.spark-sr.cost-outline {
+  stroke: #0b0c0f;
+  stroke-width: 4;
+}
+.spark-sr.cost {
+  stroke: rgba(244,241,234,.96);
   stroke-width: 2;
-  opacity: .95;
-  filter: drop-shadow(0 0 1.5px #f4f1ea) drop-shadow(0 0 5px rgba(244,241,234,.55));
 }
 .level-tag.cost {
   color: #f4f1ea;
   font-weight: 700;
 }
 
+.cost-dot {
+  position: absolute;
+  left: 0;
+  z-index: 1;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  margin-left: -3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 5px 1.5px rgba(244,241,234,.8);
+  pointer-events: none;
+  animation: cost-dot-travel 3.5s linear infinite alternate;
+}
+
+@keyframes cost-dot-travel {
+  from { left: 0%; }
+  to { left: 100%; }
+}
+
 @keyframes cost-line-flash {
   0%, 50%, 100% {
-    filter: drop-shadow(0 0 1.5px #f4f1ea) drop-shadow(0 0 5px rgba(244,241,234,.55));
-    opacity: .95;
+    filter: none;
+    opacity: 1;
   }
   25%, 75% {
-    filter: drop-shadow(0 0 3px #f4f1ea) drop-shadow(0 0 9px rgba(244,241,234,.95)) drop-shadow(0 0 16px rgba(244,241,234,.55));
+    filter: drop-shadow(0 0 3px #f4f1ea) drop-shadow(0 0 8px rgba(244,241,234,.9));
     opacity: 1;
   }
 }
@@ -465,6 +493,7 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
 @media (prefers-reduced-motion: reduce) {
   .icon-btn.spin svg, .price.flash-up, .price.flash-down, .switch::after,
   .card.cost-flash .spark-sr.cost, .card.cost-flash .level-tag.cost { animation: none; transition: none; }
+  .cost-dot { display: none; animation: none; }
 }
 
 .spike {
