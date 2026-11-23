@@ -213,20 +213,14 @@ h1 {
   filter: none;
   animation: cost-line-breathe 3s ease-in-out infinite;
 }
-.level-tag.cost {
-  color: #f4f1ea;
-  font-weight: 700;
-}
 .card.cost-above .spark-sr.cost {
   stroke: var(--up);
   color: var(--up);
 }
-.card.cost-above .level-tag.cost { color: var(--up); }
 .card.cost-below .spark-sr.cost {
   stroke: var(--down);
   color: var(--down);
 }
-.card.cost-below .level-tag.cost { color: var(--down); }
 
 @keyframes cost-line-breathe {
   0%, 100% {
@@ -250,17 +244,8 @@ h1 {
   }
 }
 
-@keyframes cost-tag-flash {
-  0%, 50%, 100% { filter: none; }
-  25%, 75% { filter: drop-shadow(0 0 6px currentColor); }
-}
-
 .card.cost-flash .spark-sr.cost {
   animation: cost-line-flash 1.4s ease-in-out 1;
-}
-
-.card.cost-flash .level-tag.cost {
-  animation: cost-tag-flash 1.4s ease-in-out 1;
 }
 
 .card-body {
@@ -488,7 +473,7 @@ h2, .coin-name { font-size: 16px; font-weight: 600; display: block; white-space:
 
 @media (prefers-reduced-motion: reduce) {
   .icon-btn.spin svg, .price.flash-up, .price.flash-down, .switch::after,
-  .spark-sr.cost, .card.cost-flash .spark-sr.cost, .card.cost-flash .level-tag.cost { animation: none; transition: none; }
+  .spark-sr.cost, .card.cost-flash .spark-sr.cost { animation: none; transition: none; }
 }
 
 .spike {

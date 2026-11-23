@@ -905,7 +905,6 @@ function paintSpark(symbol) {
 
   if (!tags) return;
   const tagItems = srVis.map((l) => ({ price: l.price, side: l.side, y: priceY(l.price, min, max) }));
-  if (costVis) tagItems.push({ price: cost, side: 'cost', y: priceY(cost, min, max) });
   if (!tagItems.length) return;
   for (const l of nudgeTags(tagItems)) {
     const tag = document.createElement('span');
@@ -1766,7 +1765,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=39').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=40').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => {
