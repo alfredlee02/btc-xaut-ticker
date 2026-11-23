@@ -206,6 +206,7 @@ h1 {
 .level-tag.res { color: var(--down); }
 .spark-sr.cost {
   stroke: rgba(244,241,234,.96);
+  color: #f4f1ea;
   stroke-width: 1;
   stroke-dasharray: none;
   opacity: .85;
@@ -216,6 +217,16 @@ h1 {
   color: #f4f1ea;
   font-weight: 700;
 }
+.card.cost-above .spark-sr.cost {
+  stroke: var(--up);
+  color: var(--up);
+}
+.card.cost-above .level-tag.cost { color: var(--up); }
+.card.cost-below .spark-sr.cost {
+  stroke: var(--down);
+  color: var(--down);
+}
+.card.cost-below .level-tag.cost { color: var(--down); }
 
 @keyframes cost-line-breathe {
   0%, 100% {
@@ -224,7 +235,7 @@ h1 {
   }
   50% {
     opacity: 1;
-    filter: drop-shadow(0 0 2px rgba(244,241,234,.4));
+    filter: drop-shadow(0 0 2px color-mix(in srgb, currentColor 40%, transparent));
   }
 }
 
@@ -234,14 +245,14 @@ h1 {
     opacity: 1;
   }
   25%, 75% {
-    filter: drop-shadow(0 0 3px #f4f1ea) drop-shadow(0 0 8px rgba(244,241,234,.9));
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 8px currentColor);
     opacity: 1;
   }
 }
 
 @keyframes cost-tag-flash {
   0%, 50%, 100% { filter: none; }
-  25%, 75% { filter: drop-shadow(0 0 6px rgba(244,241,234,.8)); }
+  25%, 75% { filter: drop-shadow(0 0 6px currentColor); }
 }
 
 .card.cost-flash .spark-sr.cost {

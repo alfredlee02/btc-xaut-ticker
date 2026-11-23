@@ -221,7 +221,7 @@ function resetCardVisuals(card) {
     spikeEl.hidden = true;
     spikeEl.textContent = '';
   }
-  card.classList.remove('spiking');
+  card.classList.remove('spiking', 'cost-above', 'cost-below');
   const svg = card.querySelector('[data-spark]');
   if (svg) {
     svg.replaceChildren();
@@ -400,6 +400,7 @@ function applyTickers(tickers, { fromCache = false, updatedAt } = {}) {
       setTimeout(() => priceEl.classList.remove('flash-up', 'flash-down'), 700);
     }
     lastPrices[t.symbol] = price;
+    syncCostTone(t.symbol);
     maybeCostCross(t.symbol, price, fromCache);
 
     const changeBox = card.querySelector('[data-change]');
@@ -809,6 +810,23 @@ function nudgeTags(placed) {
   return placed;
 }
 
+function currentPrice(symbol) {
+  const live = lastPrices[symbol];
+  if (live > 0) return live;
+  const closes = sparkState[symbol]?.closes;
+  const last = closes && closes[closes.length - 1];
+  return last > 0 ? last : null;
+}
+
+function syncCostTone(symbol) {
+  const card = cardFor(symbol);
+  if (!card) return;
+  const cost = getCost(symbol);
+  const price = currentPrice(symbol);
+  card.classList.toggle('cost-above', cost > 0 && price > 0 && price > cost);
+  card.classList.toggle('cost-below', cost > 0 && price > 0 && price < cost);
+}
+
 function paintSpark(symbol) {
   const card = cardFor(symbol);
   const svg = card?.querySelector('[data-spark]');
@@ -819,6 +837,7 @@ function paintSpark(symbol) {
   const spark = sparkState[symbol];
   if (!spark || spark.closes.length < 2) {
     svg.setAttribute('class', 'spark');
+    syncCostTone(symbol);
     return;
   }
   const closes = spark.closes;
@@ -882,6 +901,7 @@ function paintSpark(symbol) {
       y2: y.toFixed(2),
     }));
   }
+  syncCostTone(symbol);
 
   if (!tags) return;
   const tagItems = srVis.map((l) => ({ price: l.price, side: l.side, y: priceY(l.price, min, max) }));
@@ -1746,7 +1766,7 @@ if ('serviceWorker' in navigator) {
     reloaded = true;
     location.reload();
   });
-  navigator.serviceWorker.register('./sw.js?v=38').catch(() => {});
+  navigator.serviceWorker.register('./sw.js?v=39').catch(() => {});
 }
 
 SYMBOLS.forEach((symbol, i) => {
