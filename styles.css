@@ -207,7 +207,7 @@ h1 {
 .spark-sr.cost {
   stroke: rgba(244,241,234,.96);
   color: #f4f1ea;
-  stroke-width: 1;
+  stroke-width: 2;
   stroke-dasharray: none;
   opacity: .85;
   filter: none;
